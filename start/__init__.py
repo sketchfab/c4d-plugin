@@ -18,23 +18,17 @@ from c4d import plugins, utils, bitmaps, gui
 PLUGIN_ID = 1025251
 
 CURRENT_PATH = os.path.join('D:\\Softwares\\MAXON\\', 'plugins\\ImportGLTF')
-SAMPLE_PATH = CURRENT_PATH + '\\samples\\camera'
+SAMPLE_PATH = CURRENT_PATH + '\\samples\\centaur'
 MODEL_PATH = SAMPLE_PATH + '\\scene.gltf'
 sys.path.insert(0, CURRENT_PATH)
+use_model_normals = False
 
 from gltfio.imp.gltf2_io_gltf import glTFImporter
 from gltfio.imp.gltf2_io_binary import BinaryData
 
 doc = c4d.documents.GetActiveDocument()
 class ImportGLTF(plugins.ObjectData):
-    # """RoundedTube Generator"""
 
-
-    # # define the number of handles that will be drawn, it's actually a constant.
-    # HANDLECOUNT = 5
-
-
-    # Enable few optimizations, take a look at the GetVirtualObjects method for more information.
     def __init__(self):
         pass
 
@@ -51,11 +45,11 @@ class ImportGLTF(plugins.ObjectData):
         for index in imported_images:
             print('{} {}'.format(index, imported_images[index]))
 
+        imported_materials= None
         imported_materials = ImportGLTF.loadMaterials(gltf, imported_images)
         for index in imported_materials:
             print('{} {}'.format(index, imported_materials[index]))
             c4d.documents.GetActiveDocument().InsertMaterial(imported_materials[index])
-
 
         nodes = {}
         for nodeidx in range(len(gltf.data.nodes)):
@@ -73,66 +67,120 @@ class ImportGLTF(plugins.ObjectData):
 
     @staticmethod
     def convert_mesh(gltf, mesh_index, c4d_object, materials):
+
+        # Helper functions
+        def set_normals(normal_tag,polygon,normal_a,normal_b,normal_c,normal_d):
+            def float2bytes(f):
+                int_value = int(math.fabs(f * 32000.0))
+                high_byte = int(int_value / 256)
+                low_byte = int_value - 256 * high_byte
+
+                if f < 0:
+                    high_byte = 255-high_byte
+                    low_byte = 255-low_byte
+
+                return (low_byte,high_byte)
+            normal_list = [normal_a, normal_b, normal_c, normal_d]
+            normal_buffer = normal_tag.GetLowlevelDataAddressW()
+            vector_size = 6
+            component_size = 2
+
+            for v in range(0,4):
+                normal = normal_list[v]
+                component = [normal[0], normal[1], normal[2]]
+
+                for c in range(0,3):
+                    low_byte, high_byte = float2bytes(component[c])
+
+                    normal_buffer[normal_tag.GetDataSize()*polygon+v*vector_size+c*component_size+0] = chr(low_byte)
+                    normal_buffer[normal_tag.GetDataSize()*polygon+v*vector_size+c*component_size+1] = chr(high_byte)
+
         gltf_mesh = gltf.data.meshes[mesh_index]
-        uvs = []
-        # for prim in gltf_mesh.primitives:
+
+        # Import only first primitive for now
         prim = gltf_mesh.primitives[0]
         vertex = BinaryData.get_data_from_accessor(gltf, prim.attributes['POSITION'])
-        normal = BinaryData.get_data_from_accessor(gltf, prim.attributes['NORMAL'])
-        if 'TEXCOORD_0' in prim.attributes:
-            uvs = BinaryData.get_data_from_accessor(gltf, prim.attributes['TEXCOORD_0'])
-
-        indices = BinaryData.get_data_from_accessor(gltf, prim.indices)
-        # tx = BinaryData.get_data_from_accessor(gltf, prim.attributes['TEXCOORD_0'])
-        # print('Nb tx {}'.format(len(vertex)))
-
-        c4d_mesh = c4d.PolygonObject(len(vertex), len(indices))
-
         verts = []
         for i in range(len(vertex)):
             vect = c4d.Vector(vertex[i][0], vertex[i][1],vertex[i][2])
             verts.append(vect)
 
+
+
+        indices = BinaryData.get_data_from_accessor(gltf, prim.indices)
+
+        c4d_mesh = c4d.PolygonObject(len(vertex), len(indices))
         c4d_mesh.SetAllPoints(verts)
 
-        tris = []
         for i in range(0, len(indices), 3):
             poly = c4d.CPolygon(indices[i][0], indices[i+1][0], indices[i+2][0])
             c4d_mesh.SetPolygon(i, poly)
 
-        # if normal:
-        #     nb_poly = len(indices)
-        #     normtag = c4d.NormalTag( nb_poly )
-        #     normtag.__init__( nb_poly )
-        #     for i in range(0, nb_poly):
-        #         poly = c4d_mesh.GetPolygon(i)
-        #         aa = (normal[poly.a][0], normal[poly.a][1], normal[poly.a][2])
-        #         bb = (normal[poly.b][0], normal[poly.b][1], normal[poly.b][2])
-        #         cc = (normal[poly.c][0], normal[poly.c][1], normal[poly.c][2])
-        #         normtag.SetSlow(i, aa, bb, cc, (0.0, 0.0, 0.0))
+
+
+        # NORMALS
+        if use_model_normals:
+            normal = []
+            if 'NORMAL' in prim.attributes:
+                normal = BinaryData.get_data_from_accessor(gltf, prim.attributes['NORMAL'])
+
+            if normal:
+                nb_normal = len(indices)
+                normaltag = c4d.NormalTag(nb_normal)
+                for i in range(0, nb_normal):
+                    poly = c4d_mesh.GetPolygon(i)
+                    normal_a = normal[poly.a]
+                    normal_b = normal[poly.b]
+                    normal_c = normal[poly.c]
+                    normal_d = (0.0, 0.0, 0.0)
+
+                    set_normals(normaltag, i, normal_a, normal_b, normal_c, normal_d)
+
+                c4d_mesh.InsertTag(normaltag)
+        else:
+            phong = c4d.BaseTag(5612)
+            c4d_mesh.InsertTag(phong)
+
+        # # UVS TANGENTS
+        # uvs = []
+        # tangent = []
+        # if 'TANGENT' in prim.attributes:
+        #     tangent = BinaryData.get_data_from_accessor(gltf, prim.attributes['TANGENT'])
+        #     if tangent:
+        #         nb_tangent = len(indices)
+        #         tangentTag = c4d.TangentTag(nb_tangent)
+        #         for i in range(0, nb_tangent):
+        #             poly = c4d_mesh.GetPolygon(i)
+        #             normal_a = tangent[poly.a]
+        #             normal_b = tangent[poly.b]
+        #             normal_c = tangent[poly.c]
+        #             normal_d = (0.0, 0.0, 0.0, 0.0)
+
+        #             set_normals(tangentTag, i, normal_a, normal_b, normal_c, normal_d)
+
+        #         c4d_mesh.InsertTag(tangentTag)
+
+        if 'TEXCOORD_0' in prim.attributes:
+            uvs = BinaryData.get_data_from_accessor(gltf, prim.attributes['TEXCOORD_0'])
+
+            if uvs:
+                nb_poly = len(indices)
+                uvtag = c4d.UVWTag( nb_poly )
+                for i in range(0, nb_poly):
+                    poly = c4d_mesh.GetPolygon(i)
+                    aa = (uvs[poly.a][0], uvs[poly.a][1], 0.0)
+                    bb = (uvs[poly.b][0], uvs[poly.b][1], 0.0)
+                    cc = (uvs[poly.c][0], uvs[poly.c][1], 0.0)
+                    uvtag.SetSlow(i, aa, bb, cc, (0.0, 0.0, 0.0))
+
+
+            c4d_mesh.InsertTag(uvtag)
 
         mat = materials[prim.material]
         mattag = c4d.TextureTag()
         mattag.SetParameter(c4d.TEXTURETAG_MATERIAL, mat, c4d.DESCFLAGS_SET_NONE)
         mattag.SetParameter(c4d.TEXTURETAG_PROJECTION, c4d.TEXTURETAG_PROJECTION_UVW, c4d.DESCFLAGS_GET_NONE)
-
-        phong = c4d.BaseTag(5612)
-        c4d_mesh.InsertTag(phong)
         c4d_mesh.InsertTag(mattag)
-
-        if uvs:
-            nb_poly = len(indices)
-            uvtag = c4d.UVWTag( nb_poly )
-            uvtag.__init__( nb_poly )
-            for i in range(0, nb_poly):
-                poly = c4d_mesh.GetPolygon(i)
-                aa = (uvs[poly.a][0], uvs[poly.a][1], 0.0)
-                bb = (uvs[poly.b][0], uvs[poly.b][1], 0.0)
-                cc = (uvs[poly.c][0], uvs[poly.c][1], 0.0)
-                uvtag.SetSlow(i, aa, bb, cc, (0.0, 0.0, 0.0))
-
-
-            c4d_mesh.InsertTag(uvtag)
 
 
         return c4d_mesh
@@ -140,12 +188,6 @@ class ImportGLTF(plugins.ObjectData):
     @staticmethod
     def get_texture_path():
         return os.path.join(os.path.split(doc.GetParameter(c4d.DOCUMENT_FILEPATH, c4d.DESCFLAGS_GET_NONE))[0], 'tex')
-
-    @staticmethod
-    def makeTextureShader(path):
-        shtex = c4d.BaseShader(5833)
-        shtex[c4d.BITMAPSHADER_FILENAME] = path
-        return shtex
 
     @staticmethod
     def setGradientBlackWhite(colorizer):
@@ -162,6 +204,12 @@ class ImportGLTF(plugins.ObjectData):
         gradient.InsertKnot(c4d.Vector(1.0, 1.0, 1.0), 1.0, 0, 0.5, 0)
         gradient.InsertKnot(c4d.Vector(0.0,0.0, 0.0), 1.0, 1, 0, 1)
         colorizer.SetParameter(c4d.SLA_COLORIZER_GRADIENT, gradient, c4d.DESCFLAGS_SET_NONE)
+
+    @staticmethod
+    def make_specular_diffuse(spec_gloss, mat, imported_images):
+        diffusetexshader = ImportGLTF.makeTextureShader(imported_images[spec_gloss['diffuseTexture']['index']])
+        mat.SetParameter(c4d.MATERIAL_COLOR_SHADER, diffusetexshader, c4d.DESCFLAGS_SET_NONE)
+        mat.InsertShader(diffusetexshader)
 
     @staticmethod
     def make_diffuse_layer(material, mat, imported_images):
@@ -191,9 +239,14 @@ class ImportGLTF(plugins.ObjectData):
         mat.InsertShader(colorizer)
 
     @staticmethod
-    def makeTextureShader(filepath):
+    def makeTextureShader(filepath, alpha_only=False):
         sha = c4d.BaseList2D(c4d.Xbitmap)
         sha[c4d.BITMAPSHADER_FILENAME] = filepath
+        if alpha_only:
+            ls = c4d.LayerSet()
+            ls.SetMode(c4d.LAYERSETMODE_LAYERALPHA)
+            sha[c4d.BITMAPSHADER_LAYERSET] = ls
+
         return sha
 
     @staticmethod
@@ -203,73 +256,121 @@ class ImportGLTF(plugins.ObjectData):
         c4d.EventAdd()
 
     @staticmethod
-    def make_reflectance_layer(material, mat, imported_images):
+    def make_specular_layer(spec_gloss, mat, imported_images):
+        reflect = mat.AddReflectionLayer()
+        reflect.SetName("Reflectance_specular")
+        reflectid = reflect.GetDataID()
+
+        if 'specularFactor' in spec_gloss:
+            spec = spec_gloss['specularFactor']
+            specularColor = c4d.Vector(spec[0], spec[1], spec[2])
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_COLOR_COLOR, specularColor, c4d.DESCFLAGS_SET_NONE)
+
+        if 'specularGlossinessTexture' in spec_gloss:
+            speculartexshader = ImportGLTF.makeTextureShader(imported_images[spec_gloss['specularGlossinessTexture']['index']])
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_DISTRIBUTION, c4d.REFLECTION_DISTRIBUTION_GGX, c4d.DESCFLAGS_SET_NONE)
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_COLOR_TEXTURE, speculartexshader, c4d.DESCFLAGS_SET_NONE)
+            mat.InsertShader(speculartexshader)
+
+            glossinesstexshader = ImportGLTF.makeTextureShader(imported_images[spec_gloss['specularGlossinessTexture']['index']], True)
+            gloss_colorizer = c4d.BaseShader(c4d.Xcolorizer)
+            gloss_colorizer.SetParameter(c4d.SLA_COLORIZER_INPUT, c4d.SLA_COLORIZER_INPUT_LUMINANCE, c4d.DESCFLAGS_SET_NONE)
+            gloss_colorizer.SetParameter(c4d.SLA_COLORIZER_TEXTURE, glossinesstexshader, c4d.DESCFLAGS_SET_NONE)
+            gloss_colorizer.InsertShader(glossinesstexshader)
+            ImportGLTF.setGradientBlackWhite(gloss_colorizer)
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_SHADER_ROUGHNESS, gloss_colorizer, c4d.DESCFLAGS_SET_NONE)
+            mat.InsertShader(gloss_colorizer)
+
+        if 'glossinessFactor' in spec_gloss:
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_VALUE_ROUGHNESS, 1.0 - spec_gloss['glossinessFactor'], c4d.DESCFLAGS_SET_NONE)
+
+    @staticmethod
+    def make_metallic_reflectance_layer(pbr_metal, mat, imported_images):
         reflect = mat.AddReflectionLayer()
         reflect.SetName("Reflectance_metal")
         reflectid = reflect.GetDataID()
 
-        basecolortexshader = ImportGLTF.makeTextureShader(imported_images[material.pbr_metallic_roughness.base_color_texture.index])
-        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_DISTRIBUTION, c4d.REFLECTION_DISTRIBUTION_GGX, c4d.DESCFLAGS_SET_NONE)
-        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_COLOR_TEXTURE, basecolortexshader, c4d.DESCFLAGS_SET_NONE)
-        mat.InsertShader(basecolortexshader)
-
-        # Roughness
-        roughnesstexshader = ImportGLTF.makeTextureShader(imported_images[material.pbr_metallic_roughness.metallic_roughness_texture.index])
-        rough_colorizer = c4d.BaseShader(c4d.Xcolorizer)
-        rough_colorizer.SetParameter(c4d.SLA_COLORIZER_INPUT, c4d.SLA_COLORIZER_INPUT_GREEN, c4d.DESCFLAGS_SET_NONE)
-        rough_colorizer.SetParameter(c4d.SLA_COLORIZER_TEXTURE, roughnesstexshader, c4d.DESCFLAGS_SET_NONE)
-        rough_colorizer.InsertShader(roughnesstexshader)
-        ImportGLTF.setGradientBlackWhite(rough_colorizer)
-        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_SHADER_ROUGHNESS, rough_colorizer, c4d.DESCFLAGS_SET_NONE)
-        mat.InsertShader(rough_colorizer)
-
-        # Metalness
-        metalnesstexshader = ImportGLTF.makeTextureShader(imported_images[material.pbr_metallic_roughness.metallic_roughness_texture.index])
-        metal_colorizer = c4d.BaseShader(c4d.Xcolorizer)
-        metal_colorizer.SetParameter(c4d.SLA_COLORIZER_INPUT, c4d.SLA_COLORIZER_INPUT_BLUE, c4d.DESCFLAGS_SET_NONE)
-        metal_colorizer.SetParameter(c4d.SLA_COLORIZER_TEXTURE, metalnesstexshader, c4d.DESCFLAGS_SET_NONE)
-        metal_colorizer.InsertShader(metalnesstexshader)
-        ImportGLTF.setGradientBlackWhite(metal_colorizer)
-        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_TRANS_TEXTURE, metal_colorizer, c4d.DESCFLAGS_SET_NONE)
-        mat.InsertShader(metal_colorizer)
-
         mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_FRESNEL_MODE, c4d.REFLECTION_FRESNEL_CONDUCTOR, c4d.DESCFLAGS_SET_NONE)
-        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_TRANS_BRIGHTNESS, material.pbr_metallic_roughness.metallic_factor, c4d.DESCFLAGS_SET_NONE)
-        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_VALUE_ROUGHNESS, material.pbr_metallic_roughness.roughness_factor, c4d.DESCFLAGS_SET_NONE)
+
+        if pbr_metal.base_color_factor:
+            base_color_factor = pbr_metal.base_color_factor
+            base_color = c4d.Vector(base_color_factor[0], base_color_factor[1], base_color_factor[2])
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_COLOR_COLOR, base_color_factor, c4d.DESCFLAGS_SET_NONE)
+
+        if pbr_metal.base_color_texture:
+            basecolortexshader = ImportGLTF.makeTextureShader(imported_images[pbr_metal.base_color_texture.index])
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_DISTRIBUTION, c4d.REFLECTION_DISTRIBUTION_GGX, c4d.DESCFLAGS_SET_NONE)
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_COLOR_TEXTURE, basecolortexshader, c4d.DESCFLAGS_SET_NONE)
+            mat.InsertShader(basecolortexshader)
+
+        if pbr_metal.metallic_factor:
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_TRANS_BRIGHTNESS, pbr_metal.metallic_factor, c4d.DESCFLAGS_SET_NONE)
+
+        if pbr_metal.roughness_factor:
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_VALUE_ROUGHNESS, pbr_metal.roughness_factor, c4d.DESCFLAGS_SET_NONE)
+
+        if pbr_metal.metallic_roughness_texture:
+            # Metalness
+            metalnesstexshader = ImportGLTF.makeTextureShader(imported_images[pbr_metal.metallic_roughness_texture.index])
+            metal_colorizer = c4d.BaseShader(c4d.Xcolorizer)
+            metal_colorizer.SetParameter(c4d.SLA_COLORIZER_INPUT, c4d.SLA_COLORIZER_INPUT_BLUE, c4d.DESCFLAGS_SET_NONE)
+            metal_colorizer.SetParameter(c4d.SLA_COLORIZER_TEXTURE, metalnesstexshader, c4d.DESCFLAGS_SET_NONE)
+            metal_colorizer.InsertShader(metalnesstexshader)
+            ImportGLTF.setGradientBlackWhite(metal_colorizer)
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_TRANS_TEXTURE, metal_colorizer, c4d.DESCFLAGS_SET_NONE)
+            mat.InsertShader(metal_colorizer)
+
+            # Roughness
+            roughnesstexshader = ImportGLTF.makeTextureShader(imported_images[pbr_metal.metallic_roughness_texture.index])
+            rough_colorizer = c4d.BaseShader(c4d.Xcolorizer)
+            rough_colorizer.SetParameter(c4d.SLA_COLORIZER_INPUT, c4d.SLA_COLORIZER_INPUT_GREEN, c4d.DESCFLAGS_SET_NONE)
+            rough_colorizer.SetParameter(c4d.SLA_COLORIZER_TEXTURE, roughnesstexshader, c4d.DESCFLAGS_SET_NONE)
+            rough_colorizer.InsertShader(roughnesstexshader)
+            ImportGLTF.setGradientBlackWhite(rough_colorizer)
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_SHADER_ROUGHNESS, rough_colorizer, c4d.DESCFLAGS_SET_NONE)
+            mat.InsertShader(rough_colorizer)
 
     @staticmethod
-    def make_dielectric_reflectance_layer(material, mat, imported_images):
+    def make_dielectric_reflectance_layer(pbr_metal, mat, imported_images):
         reflect = mat.AddReflectionLayer()
         reflect.SetName("Reflectance_dielectric")
         reflectid = reflect.GetDataID()
 
-        basecolortexshader = ImportGLTF.makeTextureShader(imported_images[material.pbr_metallic_roughness.base_color_texture.index])
-        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_DISTRIBUTION, c4d.REFLECTION_DISTRIBUTION_GGX, c4d.DESCFLAGS_SET_NONE)
-        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_COLOR_TEXTURE, basecolortexshader, c4d.DESCFLAGS_SET_NONE)
-        mat.InsertShader(basecolortexshader)
-
-        # Roughness
-        roughnesstexshader = ImportGLTF.makeTextureShader(imported_images[material.pbr_metallic_roughness.metallic_roughness_texture.index])
-        rough_colorizer = c4d.BaseShader(c4d.Xcolorizer)
-        rough_colorizer.SetParameter(c4d.SLA_COLORIZER_INPUT, c4d.SLA_COLORIZER_INPUT_GREEN, c4d.DESCFLAGS_SET_NONE)
-        rough_colorizer.SetParameter(c4d.SLA_COLORIZER_TEXTURE, roughnesstexshader, c4d.DESCFLAGS_SET_NONE)
-        rough_colorizer.InsertShader(roughnesstexshader)
-        ImportGLTF.setGradientBlackWhite(rough_colorizer)
-        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_SHADER_ROUGHNESS, rough_colorizer, c4d.DESCFLAGS_SET_NONE)
-        mat.InsertShader(rough_colorizer)
-
-        # Metalness
-        metalnesstexshader = ImportGLTF.makeTextureShader(imported_images[material.pbr_metallic_roughness.metallic_roughness_texture.index])
-        metal_colorizer = c4d.BaseShader(c4d.Xcolorizer)
-        metal_colorizer.SetParameter(c4d.SLA_COLORIZER_INPUT, c4d.SLA_COLORIZER_INPUT_BLUE, c4d.DESCFLAGS_SET_NONE)
-        metal_colorizer.SetParameter(c4d.SLA_COLORIZER_TEXTURE, metalnesstexshader, c4d.DESCFLAGS_SET_NONE)
-        metal_colorizer.InsertShader(metalnesstexshader)
-        ImportGLTF.setGradientInvert(metal_colorizer)
-        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_TRANS_TEXTURE, metal_colorizer, c4d.DESCFLAGS_SET_NONE)
-        mat.InsertShader(metal_colorizer)
-
         mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_FRESNEL_MODE, c4d.REFLECTION_FRESNEL_DIELECTRIC, c4d.DESCFLAGS_SET_NONE)
-        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_VALUE_ROUGHNESS, material.pbr_metallic_roughness.roughness_factor, c4d.DESCFLAGS_SET_NONE)
+
+        if pbr_metal.base_color_factor:
+            base_color_factor = pbr_metal.base_color_factor
+            base_color = c4d.Vector(base_color_factor[0], base_color_factor[1], base_color_factor[2])
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_COLOR_COLOR, base_color_factor, c4d.DESCFLAGS_SET_NONE)
+
+        if pbr_metal.base_color_texture:
+            basecolortexshader = ImportGLTF.makeTextureShader(imported_images[pbr_metal.base_color_texture.index])
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_DISTRIBUTION, c4d.REFLECTION_DISTRIBUTION_GGX, c4d.DESCFLAGS_SET_NONE)
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_COLOR_TEXTURE, basecolortexshader, c4d.DESCFLAGS_SET_NONE)
+            mat.InsertShader(basecolortexshader)
+
+        if pbr_metal.metallic_roughness_texture:
+            # Roughness
+            roughnesstexshader = ImportGLTF.makeTextureShader(imported_images[pbr_metal.metallic_roughness_texture.index])
+            rough_colorizer = c4d.BaseShader(c4d.Xcolorizer)
+            rough_colorizer.SetParameter(c4d.SLA_COLORIZER_INPUT, c4d.SLA_COLORIZER_INPUT_GREEN, c4d.DESCFLAGS_SET_NONE)
+            rough_colorizer.SetParameter(c4d.SLA_COLORIZER_TEXTURE, roughnesstexshader, c4d.DESCFLAGS_SET_NONE)
+            rough_colorizer.InsertShader(roughnesstexshader)
+            ImportGLTF.setGradientBlackWhite(rough_colorizer)
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_SHADER_ROUGHNESS, rough_colorizer, c4d.DESCFLAGS_SET_NONE)
+            mat.InsertShader(rough_colorizer)
+
+            # Metalness
+            metalnesstexshader = ImportGLTF.makeTextureShader(imported_images[pbr_metal.metallic_roughness_texture.index])
+            metal_colorizer = c4d.BaseShader(c4d.Xcolorizer)
+            metal_colorizer.SetParameter(c4d.SLA_COLORIZER_INPUT, c4d.SLA_COLORIZER_INPUT_BLUE, c4d.DESCFLAGS_SET_NONE)
+            metal_colorizer.SetParameter(c4d.SLA_COLORIZER_TEXTURE, metalnesstexshader, c4d.DESCFLAGS_SET_NONE)
+            metal_colorizer.InsertShader(metalnesstexshader)
+            ImportGLTF.setGradientInvert(metal_colorizer)
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_TRANS_TEXTURE, metal_colorizer, c4d.DESCFLAGS_SET_NONE)
+            mat.InsertShader(metal_colorizer)
+
+        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_VALUE_ROUGHNESS, pbr_metal.roughness_factor, c4d.DESCFLAGS_SET_NONE)
 
     @staticmethod
     def set_normal_map(material, mat, imported_images):
@@ -278,6 +379,21 @@ class ImportGLTF(plugins.ObjectData):
         mat.SetParameter(c4d.MATERIAL_NORMAL_SHADER, normaltexshader, c4d.DESCFLAGS_SET_NONE)
         mat.InsertShader(normaltexshader)
         # if need flipY normalmap: mat.SetParameter(c4d.MATERIAL_NORMAL_REVERSEY, 1,  c4d.DESCFLAGS_SET_NONE)
+
+    @staticmethod
+    def set_alpha(material, mat, imported_images):
+        mat[c4d.MATERIAL_USE_ALPHA] = 1
+        diffuse_tex_path = None
+        if material.extensions and 'KHR_materials_pbrSpecularGlossiness' in material.extensions:
+            if 'diffuseTexture' in material.extensions['KHR_materials_pbrSpecularGlossiness']:
+                diffuse_tex_path = imported_images[material.extensions['KHR_materials_pbrSpecularGlossiness']['diffuseTexture']['index']]
+
+        elif material.pbr_metallic_roughness.base_color_texture:
+            diffuse_tex_path = imported_images[material.pbr_metallic_roughness.base_color_texture.index]
+
+        alphaShader = ImportGLTF.makeTextureShader(diffuse_tex_path)
+        mat.SetParameter(c4d.MATERIAL_ALPHA_SHADER, alphaShader, c4d.DESCFLAGS_SET_NONE)
+        mat.InsertShader(alphaShader)
 
     @staticmethod
     def loadMaterials(gltf, imported_images):
@@ -289,14 +405,28 @@ class ImportGLTF(plugins.ObjectData):
             mat = c4d.Material()
             mat.SetName(material.name)
 
-            # Turn off Color
-            mat[c4d.MATERIAL_USE_COLOR] = 0
-            mat.RemoveReflectionAllLayers()
+            if material.extensions and 'KHR_materials_pbrSpecularGlossiness' in material.extensions:
+                mat[c4d.MATERIAL_USE_COLOR] = 1
+                mat.RemoveReflectionAllLayers()
+                spec_gloss = material.extensions['KHR_materials_pbrSpecularGlossiness']
+                ImportGLTF.make_specular_diffuse(spec_gloss, mat, imported_images)
+                ImportGLTF.make_specular_layer(spec_gloss, mat, imported_images)
 
-            ImportGLTF.make_diffuse_layer(material, mat, imported_images)
-            ImportGLTF.make_reflectance_layer(material, mat, imported_images)
-            ImportGLTF.make_dielectric_reflectance_layer(material, mat, imported_images)
-            ImportGLTF.set_normal_map(material, mat, imported_images)
+            else:
+                # Turn off Color
+                mat[c4d.MATERIAL_USE_COLOR] = 0
+                mat.RemoveReflectionAllLayers()
+
+                pbr_metal = material.pbr_metallic_roughness
+                ImportGLTF.make_diffuse_layer(material, mat, imported_images, is_metal=True)
+                ImportGLTF.make_metallic_reflectance_layer(pbr_metal, mat, imported_images)
+                ImportGLTF.make_dielectric_reflectance_layer(pbr_metal, mat, imported_images)
+
+            if material.normal_texture:
+                ImportGLTF.set_normal_map(material, mat, imported_images)
+
+            if material.alpha_mode in ('BLEND', 'MASK'):
+                ImportGLTF.set_alpha(material, mat, imported_images)
 
             # masktexid = diffuseid  + c4d.REFLECTION_LAYER_COLOR_TEXTURE
             # img_shader = imported_images[material.normalTexture]
@@ -359,7 +489,7 @@ class ImportGLTF(plugins.ObjectData):
 
 
     @staticmethod
-    def convert_node(gltf, node_idx, materials):
+    def convert_node(gltf, node_idx, materials=None):
         gltf_node = gltf.data.nodes[node_idx]
         c4d_object = None
         if gltf_node.mesh is not None:
