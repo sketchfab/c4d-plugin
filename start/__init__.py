@@ -32,7 +32,6 @@ class ImportGLTF(plugins.ObjectData):
     def __init__(self):
         pass
 
-
     @staticmethod
     def run():
         import gltfio
@@ -846,12 +845,12 @@ class ImportGLTF(plugins.ObjectData):
     #     return ret
 
 
-# This code is called at the startup, it register the class RoundedTube as a plugin to be used later in Cinema 4D. It have to be done only once.
-if __name__ == "__main__":
-    disr, file = os.path.split(__file__)
+# # This code is called at the startup, it register the class RoundedTube as a plugin to be used later in Cinema 4D. It have to be done only once.
+# if __name__ == "__main__":
+#     disr, file = os.path.split(__file__)
 
-    icon = bitmaps.BaseBitmap()
-    icon.InitWith(os.path.join(disr, "res", "oroundedtube.tif"))
-    # Register the class RoundedTube as a Object Plugin to be used later in Cinema 4D.
-    plugins.RegisterObjectPlugin(id=PLUGIN_ID, str="Import glTF", g=ImportGLTF, icon=icon,
-                                description="roundedtube2", info=c4d.OBJECT_GENERATOR)
+#     icon = bitmaps.BaseBitmap()
+#     icon.InitWith(os.path.join(disr, "res", "oroundedtube.tif"))
+#     # Register the class RoundedTube as a Object Plugin to be used later in Cinema 4D.
+#     plugins.RegisterObjectPlugin(id=PLUGIN_ID, str="Import glTF", g=ImportGLTF, icon=icon,
+#                                 description="roundedtube2", info=c4d.OBJECT_GENERATOR)
