@@ -295,7 +295,7 @@ class ImportGLTF(plugins.ObjectData):
         if pbr_metal.base_color_factor:
             base_color_factor = pbr_metal.base_color_factor
             base_color = c4d.Vector(base_color_factor[0], base_color_factor[1], base_color_factor[2])
-            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_COLOR_COLOR, base_color_factor, c4d.DESCFLAGS_SET_NONE)
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_COLOR_COLOR, base_color, c4d.DESCFLAGS_SET_NONE)
 
         if pbr_metal.base_color_texture:
             basecolortexshader = ImportGLTF.makeTextureShader(imported_images[pbr_metal.base_color_texture.index])
@@ -341,7 +341,7 @@ class ImportGLTF(plugins.ObjectData):
         if pbr_metal.base_color_factor:
             base_color_factor = pbr_metal.base_color_factor
             base_color = c4d.Vector(base_color_factor[0], base_color_factor[1], base_color_factor[2])
-            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_COLOR_COLOR, base_color_factor, c4d.DESCFLAGS_SET_NONE)
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_COLOR_COLOR, base_color, c4d.DESCFLAGS_SET_NONE)
 
         if pbr_metal.base_color_texture:
             basecolortexshader = ImportGLTF.makeTextureShader(imported_images[pbr_metal.base_color_texture.index])
@@ -396,6 +396,24 @@ class ImportGLTF(plugins.ObjectData):
         mat.InsertShader(alphaShader)
 
     @staticmethod
+    def set_emissive(material, mat, imported_images):
+        if not material.emissive_texture and not material.emissive_factor:
+            return
+
+        mat[c4d.MATERIAL_USE_LUMINANCE] = 1
+        if material.emissive_texture:
+            emit_tex_path = imported_images[material.emissive_texture.index]
+            emitShader = ImportGLTF.makeTextureShader(emit_tex_path)
+            mat.SetParameter(c4d.MATERIAL_LUMINANCE_SHADER, emitShader, c4d.DESCFLAGS_SET_NONE)
+            mat.InsertShader(emitShader)
+
+        if material.emissive_factor:
+            emit_factor = material.emissive_factor
+            emit_color = c4d.Vector(emit_factor[0], emit_factor[1], emit_factor[2])
+            mat.SetParameter(c4d.MATERIAL_LUMINANCE_COLOR, emitShader, c4d.DESCFLAGS_SET_NONE)
+
+
+    @staticmethod
     def loadMaterials(gltf, imported_images):
         ''' Might be replaced by imported c4d mat'''
         # Following tricks from https://forum.allegorithmic.com/index.php?topic=9757.0#msg85512
@@ -418,7 +436,7 @@ class ImportGLTF(plugins.ObjectData):
                 mat.RemoveReflectionAllLayers()
 
                 pbr_metal = material.pbr_metallic_roughness
-                ImportGLTF.make_diffuse_layer(material, mat, imported_images, is_metal=True)
+                ImportGLTF.make_diffuse_layer(material, mat, imported_images)
                 ImportGLTF.make_metallic_reflectance_layer(pbr_metal, mat, imported_images)
                 ImportGLTF.make_dielectric_reflectance_layer(pbr_metal, mat, imported_images)
 
@@ -427,6 +445,8 @@ class ImportGLTF(plugins.ObjectData):
 
             if material.alpha_mode in ('BLEND', 'MASK'):
                 ImportGLTF.set_alpha(material, mat, imported_images)
+
+            ImportGLTF.set_emissive(material, mat, imported_images)
 
             # masktexid = diffuseid  + c4d.REFLECTION_LAYER_COLOR_TEXTURE
             # img_shader = imported_images[material.normalTexture]
