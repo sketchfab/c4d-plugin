@@ -18,14 +18,27 @@
  *
  * ***** END GPL LICENSE BLOCK *****
  """
-
+from __future__ import division
 import os
 import json
 import shutil
 import tempfile
 import requests
+import urllib
+from collections import OrderedDict
+from PIL import Image
+import time
 
 class Config:
+    # Plugin Specific
+    __author__ = "Sketchfab"
+    __website__ = "sketchfab.com"
+    __sketchfab__ = "http://sketchfab.com"
+    __email__ = "support@sketchfab.com"
+    __plugin_title__ = "Sketchfab Plugin"
+
+    PLUGIN_VERSION = "0.0.1"
+    PLUGIN_ID = 1025251
 
     # sometimes the path in preferences is empty
     def get_temp_path():
@@ -88,8 +101,9 @@ class Config:
                          ('LIKES', "Likes", ""),
                          ('VIEWS', "Views", ""),
                          ('RECENT', "Recent", ""))
-    MAX_THUMBNAIL_HEIGHT = 256
 
+    MAX_THUMBNAIL_HEIGHT = 512
+    UI_THUMBNAIL_RESOLUTION = 128
 
 class Utils:
 
@@ -218,12 +232,69 @@ class SketchfabApi:
         self.plan_type = ''
         self.next_results_url = None
         self.prev_results_url = None
+        self.import_callback = None
+        self.search_results = {}
+
+    def get_sketchfab_model(self, uid):
+        if 'current' in self.search_results and uid in self.search_results['current']:
+            return self.search_results['current'][uid]
+
+        return None
+
+    def parse_results(self, r, *args, **kwargs):
+        json_data = r.json()
+
+        if 'current' in self.search_results:
+            self.search_results['current'].clear()
+            del self.search_results['current']
+
+        self.search_results['current'] = OrderedDict()
+
+        for result in list(json_data['results']):
+
+            # Dirty fix to avoid parsing obsolete data
+            if 'current' not in self.search_results:
+                return
+
+            uid = result['uid']
+            self.search_results['current'][result['uid']] = SketchfabModel(result)
+
+            if not os.path.exists(os.path.join(Config.SKETCHFAB_THUMB_DIR, uid) + '.jpeg'):
+                self.request_thumbnail(result['thumbnails'], self.handle_thumbnail)
+            # elif uid not in skfb.custom_icons:
+            #     self.custom_icons.load(uid, os.path.join(Config.SKETCHFAB_THUMB_DIR, "{}.jpeg".format(uid)), 'IMAGE')
+
+        if json_data['next']:
+            self.next_results_url = json_data['next']
+        else:
+            self.next_results_url = None
+
+        if json_data['previous']:
+            self.prev_results_url = json_data['previous']
+        else:
+            self.prev_results_url = None
+
+    def handle_login(self, r, *args, **kwargs):
+        if r.status_code == 200 and 'access_token' in r.json():
+            self.access_token = r.json()['access_token']
+            # Cache.save_key('username', login_props.email)
+            # Cache.save_key('access_token', browser_props.skfb_api.access_token)
+
+            self.build_headers()
+            self.request_user_info()
+            print("LOGGED")
+
+        else:
+            print('Cannot login.\n {}'.format(r.json()))
+
+        self.is_logging = False
+
+    def login(self, email, password):
+        url = '{}&username={}&password={}'.format(Config.SKETCHFAB_OAUTH, urllib.quote(email), urllib.quote(password))
+        requests.post(url, hooks={'response': self.handle_login})
 
     def build_headers(self):
         self.headers = {'Authorization': 'Bearer ' + self.access_token}
-
-    def login(self, email, password):
-        bpy.ops.wm.login_modal('INVOKE_DEFAULT')
 
     def is_user_logged(self):
         if self.access_token and self.headers:
@@ -277,7 +348,6 @@ class SketchfabApi:
         requests.get(url, hooks={'response': self.handle_model_info})
 
     def handle_model_info(self, r, *args, **kwargs):
-        skfb = get_sketchfab_props()
         uid = Utils.get_uid_from_model_url(r.url)
 
         # Dirty fix to avoid processing obsolete result data
@@ -291,15 +361,15 @@ class SketchfabApi:
         model.animated = 'Yes ({} animation(s))'.format(anim_count) if anim_count > 0 else 'No'
         skfb.search_results['current'][uid] = model
 
-    def search(self, query, search_cb):
+    def search(self, query):
         search_query = '{}{}'.format(Config.BASE_SEARCH, query)
-        requests.get(query, hooks={'response': search_cb})
+        requests.get(query, hooks={'response': self.parse_results})
 
     def search_cursor(self, url, search_cb):
         requests.get(url, hooks={'response': search_cb})
 
     def download_model(self, uid):
-        skfb_model = get_sketchfab_model(uid)
+        skfb_model = self.get_sketchfab_model(uid)
         if skfb_model.download_url:
             # Check url sanity
             if time.time() - skfb_model.time_url_requested < skfb_model.url_expires:
@@ -316,20 +386,85 @@ class SketchfabApi:
     def handle_download(self, r, *args, **kwargs):
         if r.status_code != 200 or 'gltf' not in r.json():
             print('Download not available for this model')
+            print(r)
             return
 
-        skfb = get_sketchfab_props()
         uid = Utils.get_uid_from_model_url(r.url)
 
         gltf = r.json()['gltf']
-        skfb_model = get_sketchfab_model(uid)
+        skfb_model = self.get_sketchfab_model(uid)
         skfb_model.download_url = gltf['url']
         skfb_model.time_url_requested = time.time()
         skfb_model.url_expires = gltf['expires']
 
         self.get_archive(gltf['url'])
 
+    def handle_thumbnail(self, r, *args, **kwargs):
+        uid = r.url.split('/')[4]
+        if not os.path.exists(Config.SKETCHFAB_THUMB_DIR):
+            os.makedirs(Config.SKETCHFAB_THUMB_DIR)
+        preview_path = os.path.join(Config.SKETCHFAB_THUMB_DIR, uid) + '.jpeg'
+
+        with open(preview_path, "wb") as f:
+            total_length = r.headers.get('content-length')
+
+            if total_length is None and r.content:
+                f.write(r.content)
+            else:
+                dl = 0
+                total_length = int(total_length)
+                for data in r.iter_content(chunk_size=4096):
+                    dl += len(data)
+                    f.write(data)
+
+
+        im = Image.open(preview_path)
+
+        # Resize to UI_THUMBNAIL_RESOLUTION height and then crop UI_THUMBNAIL_RESOLUTION * UI_THUMBNAIL_RESOLUTION
+        size = Config.UI_THUMBNAIL_RESOLUTION
+
+        width, height = im.size
+        factor = size / height
+
+        width *= factor
+        height *= factor
+        im = im.resize((int(width), int(height)))
+
+        left = (width - size)/2
+        top = (height - size)/2
+        right = (width + size)/2
+        bottom = (height + size)/2
+
+        im = im.crop((left, top, right, bottom))
+
+        thumbnail_path = os.path.join(Config.SKETCHFAB_THUMB_DIR, uid) + '_thumb.jpeg'
+        im.save(thumbnail_path, "JPEG")
+
+        self.search_results['current'][uid].preview_path = preview_path
+        self.search_results['current'][uid].thumbnail_path = thumbnail_path
+
     def get_archive(self, url):
+        def unzip_archive(archive_path):
+            if os.path.exists(archive_path):
+                # set_import_status('Unzipping model')
+                import zipfile
+                try:
+                    zip_ref = zipfile.ZipFile(archive_path, 'r')
+                    extract_dir = os.path.dirname(archive_path)
+                    zip_ref.extractall(extract_dir)
+                    zip_ref.close()
+                except zipfile.BadZipFile:
+                    print('Error when dezipping file')
+                    os.remove(archive_path)
+                    print('Invaild zip. Try again')
+                    return None, None
+
+                gltf_file = os.path.join(extract_dir, 'scene.gltf')
+                return gltf_file, archive_path
+
+            else:
+                print('ERROR: archive doesn\'t exist')
+
         if url is None:
             print('Url is None')
             return
@@ -342,9 +477,9 @@ class SketchfabApi:
 
         archive_path = os.path.join(temp_dir, '{}.zip'.format(uid))
         if not os.path.exists(archive_path):
-            wm = bpy.context.window_manager
-            wm.progress_begin(0, 100)
-            set_log("Downloading model..")
+            # wm = bpy.context.window_manager
+            # wm.progress_begin(0, 100)
+            # set_log("Downloading model..")
             with open(archive_path, "wb") as f:
                 total_length = r.headers.get('content-length')
                 if total_length is None:  # no content length header
@@ -356,21 +491,53 @@ class SketchfabApi:
                         dl += len(data)
                         f.write(data)
                         done = int(100 * dl / total_length)
-                        wm.progress_update(done)
-                        set_log("Downloading model..{}%".format(done))
+                        # wm.progress_update(done)
+                        # set_log("Downloading model..{}%".format(done))
 
-            wm.progress_end()
+            # wm.progress_end()
         else:
             print('Model already downloaded')
 
         gltf_path, gltf_zip = unzip_archive(archive_path)
+        print(gltf_path)
         if gltf_path:
             try:
-                import_model(gltf_path, uid)
+                self.import_callback(gltf_path, uid)
             except Exception as e:
                 import traceback
                 print(traceback.format_exc())
         else:
             print("Failed to download model (url might be invalid)")
-            model = get_sketchfab_model(uid)
-            set_import_status("Import model ({})".format(model.download_size if model.download_size else 'fetching data'))
+            model = self.get_sketchfab_model(uid)
+            # set_import_status("Import model ({})".format(model.download_size if model.download_size else 'fetching data'))
+
+class SketchfabModel:
+    def __init__(self, json_data):
+        self.title = str(json_data['name'])
+        self.author = json_data['user']['displayName']
+        self.uid = json_data['uid']
+        self.vertex_count = json_data['vertexCount']
+        self.face_count = json_data['faceCount']
+        self.thumbnail_path = ''
+        self.preview_path = ''
+
+        if 'archives' in json_data and  'gltf' in json_data['archives']:
+            self.download_size = Utils.humanify_size(json_data['archives']['gltf']['size'])
+        else:
+            self.download_size = None
+
+        self.thumbnail_url = os.path.join(Config.SKETCHFAB_THUMB_DIR, '{}.jpeg'.format(self.uid))
+
+
+        # Model info request
+        self.info_requested = False
+        self.license = None
+        self.animated = False
+
+        # Download url data
+        self.download_url = None
+        self.time_url_requested = None
+        self.url_expires = None
+
+    def print_model(self):
+        print(self.title)

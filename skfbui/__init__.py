@@ -1,22 +1,17 @@
+
 import c4d
 from c4d import documents, gui, plugins, bitmaps, storage
 from c4d.threading import C4DThread
-
-__author__ = "Sketchfab"
-__website__ = "sketchfab.com"
-__sketchfab__ = "http://sketchfab.com"
-__email__ = "aurelien@sketchfab.com"
-__plugin_title__ = "Sketchfab Plugin"
-__version__ = "0.0.1"
-
-BTN_IMPORT = 100010
 
 import start
 import imp
 import requests
 from .skfbapi import *
+import webbrowser
 
-from collections import OrderedDict
+from gltfio.imp.gltf2_io_gltf import glTFImporter
+from gltfio.imp.gltf2_io_binary import BinaryData
+from start import ImportGLTF
 
 # enums
 resultContainerIDStart = 100015 # + 24 since 24 results on page
@@ -30,29 +25,18 @@ GROUP_FIVE = 50005
 GROUP_RESULTS = 50006
 
 # class SkfbModelDialog(gui.GeDialog):
+BTN_SEARCH = 100001
+BTN_VIEW_SKFB = 100002
+BTN_IMPORT = 100003
 
-BTN_ABOUT = 100001
-BTN_WEB = 100002
-TXT_MODEL_NAME = 100003
-EDITXT_MODEL_TITLE = 100004
-TXT_DESCRIPTION = 100005
-EDITXT_DESCRIPTION = 100006
-TXT_TAGS = 100007
-EDITXT_TAGS = 100008
-TXT_API_TOKEN = 100009
-EDITXT_API_TOKEN = 100010
-BTN_PUBLISH = 100011
-MENU_SAVE_API_TOKEN = 100012
-BTN_WEB_990 = 100013
-CHK_PRIVATE = 100014
-BTN_THUMB_SRC_PATH = 100015
-EDITXT_THUMB_SRC_PATH = 100015
-EDITXT_PASSWORD = 100016
-CHK_ANIMATION = 100017
-CHK_PUBLISHDRAFT = 100018
-BTN_SKFB_SIGNUP = 100019
-BTN_SKFB_TOKEN = 100020
+TXT_SEARCH_QUERY = 100003
+EDITXT_MSEARCH_QUERY = 100004
 
+CHK_IS_PBR = 100017
+CHK_IS_STAFFPICK = 100017
+CHK_IS_ANIMATED = 100017
+
+MODEL_WINDOW_DIALOG = 200051
 
 class SkfbPluginDialog(gui.GeDialog):
 
@@ -64,15 +48,21 @@ class SkfbPluginDialog(gui.GeDialog):
         from start import *
         from skfbapi import *
 
-        self.search_results = {}
         self.skfb_api = SketchfabApi()
+        self.skfb_api.import_callback = self.import_model
+        self.skfb_api.login(" ")
         self.buttons = []
         self.containers = []
+        self.model_dialog = None
 
         return True
 
+    def import_model(self, path, uid):
+        ImportGLTF.run(path, uid)
+
     def CreateLayout(self):
-        self.SetTitle(__plugin_title__)
+        self.SetTitle(Config.__plugin_title__)
+
         # Create the menu
         self.MenuFlushAll()
 
@@ -81,14 +71,8 @@ class SkfbPluginDialog(gui.GeDialog):
         self.MenuAddCommand(c4d.IDM_CM_CLOSEWINDOW)
         self.MenuSubEnd()
 
-        # self.redraw_search_group()
-        # self.redraw_results()
-        self.AddButton(id=BTN_IMPORT, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=16, name="Import")
-        # if self.result_valid:
-        #     self.GroupBegin(0, c4d.BFH_SCALEFIT|c4d.BFH_SCALEFIT, 4, 4, "Bitmap Example",0) #id, flags, columns, rows, grouptext, groupflags
-        #     self.GroupBorder(c4d.BORDER_BLACK)
-        #     self.create_model_button(self.search_results['current'].values()[0])
-        #     self.GroupEnd()
+        self.AddButton(id=BTN_SEARCH, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=16, name="Import")
+
         self.MenuFinished()
 
         self.GroupBegin(id=GROUP_WRAPPER,
@@ -106,38 +90,31 @@ class SkfbPluginDialog(gui.GeDialog):
 
         self.GroupSpace(40, 10)
         self.GroupBorderSpace(6, 6, 6, 6)
+        # self.AddStaticText(id=TXT_MODEL_NAME, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Model name:")
+        # self.AddEditText(id=EDITXT_MODEL_TITLE, flags=c4d.BFH_SCALEFIT, initw=0, inith=0)
+        # self.SetString(EDITXT_MODEL_TITLE, docname)
 
-        self.AddStaticText(id=TXT_MODEL_NAME, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Model name:")
-        self.AddEditText(id=EDITXT_MODEL_TITLE, flags=c4d.BFH_SCALEFIT, initw=0, inith=0)
-        self.SetString(EDITXT_MODEL_TITLE, docname)
+        # self.AddStaticText(id=TXT_DESCRIPTION, flags=c4d.BFH_LEFT | c4d.BFV_TOP,
+        #                    initw=0, inith=0, name="Description:")
+        # self.AddMultiLineEditText(id=EDITXT_DESCRIPTION, flags=c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+        #                           initw=0, inith=100, style=c4d.DR_MULTILINE_WORDWRAP)
+        # self.SetString(EDITXT_DESCRIPTION, docname)
 
-        self.AddStaticText(id=TXT_DESCRIPTION, flags=c4d.BFH_LEFT | c4d.BFV_TOP,
-                           initw=0, inith=0, name="Description:")
-        self.AddMultiLineEditText(id=EDITXT_DESCRIPTION, flags=c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
-                                  initw=0, inith=100, style=c4d.DR_MULTILINE_WORDWRAP)
-        self.SetString(EDITXT_DESCRIPTION, docname)
+        # self.AddStaticText(id=TXT_TAGS, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Tags: cinema4d ")
+        # self.AddEditText(id=EDITXT_TAGS, flags= c4d.BFH_RIGHT | c4d.BFH_SCALEFIT, initw=0, inith=0)
 
-        self.AddStaticText(id=TXT_TAGS, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Tags: cinema4d ")
-        self.AddEditText(id=EDITXT_TAGS, flags= c4d.BFH_RIGHT | c4d.BFH_SCALEFIT, initw=0, inith=0)
-
-        self.AddCheckbox(id=CHK_ANIMATION, flags=c4d.BFH_LEFT,
-                         initw=0, inith=0, name="Enable animation")
+        # self.AddCheckbox(id=CHK_ANIMATION, flags=c4d.BFH_LEFT,
+        #                  initw=0, inith=0, name="Enable animation")
 
         self.GroupEnd()
         return True
 
 
     def result_valid(self):
-        if not 'current' in self.search_results:
+        if not 'current' in self.skfb_api.search_results:
             return False
 
         return True
-
-    def redraw_search_group(self):
-        self.LayoutFlushGroup(GROUP_SEARCH)
-        self.AddButton(id=BTN_IMPORT, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=16, name="Search")
-
-        self.LayoutChanged(GROUP_SEARCH)
 
     def resultGroupWillRedraw(self):
         self.LayoutFlushGroup(GROUP_RESULTS)
@@ -145,118 +122,103 @@ class SkfbPluginDialog(gui.GeDialog):
         self.LayoutChanged(GROUP_RESULTS)
 
     def create_results_ui(self):
-        image_container = c4d.BaseContainer() #Create a new container to store the image we will load for the button later on
-        self.GroupBegin(0, c4d.BFH_SCALEFIT|c4d.BFH_SCALEFIT, 4, 4, "Bitmap Example",0, 256, 256) #id, flags, columns, rows, grouptext, groupflags
-        self.GroupBorder(c4d.BORDER_BLACK)
+
+        self.GroupBegin(0, c4d.BFH_SCALEFIT|c4d.BFH_SCALEFIT, 6, 4, "Bitmap Example",0) #id, flags, columns, rows, grouptext, groupflags
+        # self.GroupBorder(c4d.BORDER_BLACK)
 
         if not self.result_valid:
             return
 
-        for index, skfb_model in enumerate(self.search_results['current'].values()):
+        for index, skfb_model in enumerate(self.skfb_api.search_results['current'].values()):
+            image_container = c4d.BaseContainer() #Create a new container to store the image we will load for the button later on
+            self.GroupBegin(0, c4d.BFH_SCALEFIT|c4d.BFH_SCALEFIT, 1, 2, "Bitmap Example",0)
             fn = c4d.storage.GeGetC4DPath(c4d.C4D_PATH_DESKTOP) #Gets the desktop path
             filenameid = resultContainerIDStart + index
-            image_container.SetLong(c4d.BITMAPBUTTON_BORDER, c4d.BORDER_OUT) #Sets the border to look like a button
             image_container.SetBool(c4d.BITMAPBUTTON_BUTTON, True)
+            # image_container.SetBool(c4d.BITMAPBUTTON_IGNORE_BITMAP_WIDTH, True)
+            # image_container.SetBool(c4d.BITMAPBUTTON_IGNORE_BITMAP_HEIGHT, True)
+            image_container.SetBool(c4d.BITMAPBUTTON_NOBORDERDRAW, True)
             image_container.SetFilename(filenameid, skfb_model.thumbnail_path)
 
-            self.mybutton = self.AddCustomGui(filenameid, c4d.CUSTOMGUI_BITMAPBUTTON, "Bitmap Button", c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 30, 30, image_container)
+            self.mybutton = self.AddCustomGui(filenameid, c4d.CUSTOMGUI_BITMAPBUTTON, "Bitmap Button", c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 10, 10, image_container)
+            self.mybutton.SetLayoutMode(c4d.LAYOUTMODE_MINIMIZED)
             self.mybutton.SetImage(str(skfb_model.thumbnail_path), False)
             self.mybutton.SetToggleState(True)
 
+            self.AddStaticText(id=3, flags=c4d.BFH_CENTER,
+                   initw=Config.UI_THUMBNAIL_RESOLUTION, inith=32, name='{}'.format(skfb_model.title))
+            self.GroupEnd()
+
         self.GroupEnd()
-        self.LayoutChanged(10042)
+        self.LayoutChanged(GROUP_WRAPPER)
 
     def Command(self, id, msg):
-        if id == BTN_IMPORT:
-            self.skfb_api.search(Config.DEFAULT_SEARCH, self.parse_results)
+        if id == BTN_SEARCH:
+            self.skfb_api.search(Config.DEFAULT_SEARCH)
             self.resultGroupWillRedraw()
 
         for i in range(24):
             if id == resultContainerIDStart + i:
                 print('ENABLED BUTTON  {}'.format(i))
+                self.model_dialog = SkfbModelDialog()
+                self.model_dialog.SetModelInfo(self.skfb_api.search_results['current'].values()[i], self.skfb_api)
+                self.model_dialog.Open(dlgtype=c4d.DLG_TYPE_MODAL_RESIZEABLE , defaultw=450, defaulth=300, xpos=-1, ypos=-1)
 
         return True
 
-    def parse_results(self, r, *args, **kwargs):
-        # skfb = get_sketchfab_props()
-        json_data = r.json()
 
-        if 'current' in self.search_results:
-            self.search_results['current'].clear()
-            del self.search_results['current']
+class SkfbModelDialog(gui.SubDialog):
 
-        self.search_results['current'] = OrderedDict()
+    skfb_model = None
 
-        for result in list(json_data['results']):
+    def InitValues(self):
+        return True
 
-            # Dirty fix to avoid parsing obsolete data
-            if 'current' not in self.search_results:
-                return
+    def SetModelInfo(self, skfb_model, api):
+        self.skfb_model = skfb_model
+        self.skfb_api = api
 
-            uid = result['uid']
-            self.search_results['current'][result['uid']] = SketchfabModel(result)
+    def CreateLayout(self):
+        self.SetTitle("MODEL PAGE")
 
-            if not os.path.exists(os.path.join(Config.SKETCHFAB_THUMB_DIR, uid) + '.jpeg'):
-                self.skfb_api.request_thumbnail(result['thumbnails'], self.handle_thumbnail)
-            # elif uid not in skfb.custom_icons:
-            #     self.custom_icons.load(uid, os.path.join(Config.SKETCHFAB_THUMB_DIR, "{}.jpeg".format(uid)), 'IMAGE')
+        # Create the menu
+        self.MenuFlushAll()
 
-        if json_data['next']:
-            self.skfb_api.next_results_url = json_data['next']
+        # BIG Thumbnail
+        use_thumbnail = True
+        if use_thumbnail:
+            image_container = c4d.BaseContainer() #Create a new container to store the image we will load for the button later on
+            image_container.SetBool(c4d.BITMAPBUTTON_BUTTON, True)
+            image_container.SetBool(c4d.BITMAPBUTTON_NOBORDERDRAW, True)
+            image_container.SetFilename(resultContainerIDStart, self.skfb_model.thumbnail_path)
+
+            self.mybutton = self.AddCustomGui(BTN_VIEW_SKFB, c4d.CUSTOMGUI_BITMAPBUTTON, "Bitmap Button", c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 10, 10, image_container)
+            self.mybutton.SetLayoutMode(c4d.LAYOUTMODE_MINIMIZED)
+            self.mybutton.SetImage(str(self.skfb_model.preview_path), False)
+            self.mybutton.SetToggleState(False)
+            self.AddStaticText(id=3, flags=c4d.BFH_CENTER,
+                initw=512, name='Click on image to view model on Sketchfab.com')
         else:
-            self.skfb_api.next_results_url = None
+            self.html = self.AddCustomGui(1000, c4d.CUSTOMGUI_HTMLVIEWER, "html", c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 405, 720 )
+            self.html.SetUrl("https://sketchfab.com/models/{}/embed?autostart=1".format(self.skfb_model.uid), c4d.URL_ENCODING_UTF16)
+            self.html.DoAction(c4d.WEBPAGE_REFRESH)
 
-        if json_data['previous']:
-            self.skfb_api.prev_results_url = json_data['previous']
-        else:
-            self.skfb_api.prev_results_url = None
+        # Model infos
+        self.AddStaticText(id=3, flags=c4d.BFH_LEFT,
+            initw=256, name='{}'.format(self.skfb_model.title))
+        self.AddStaticText(id=3, flags=c4d.BFH_LEFT,
+            initw=256, name=u'{}'.format(self.skfb_model.author))
 
-    def handle_thumbnail(self, r, *args, **kwargs):
-        uid = r.url.split('/')[4]
-        if not os.path.exists(Config.SKETCHFAB_THUMB_DIR):
-            os.makedirs(Config.SKETCHFAB_THUMB_DIR)
-        thumbnail_path = os.path.join(Config.SKETCHFAB_THUMB_DIR, uid) + '.jpeg'
+        self.AddButton(id=BTN_IMPORT, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=16, name="Import")
 
-        with open(thumbnail_path, "wb") as f:
-            total_length = r.headers.get('content-length')
+        return True
 
-            if total_length is None and r.content:
-                f.write(r.content)
-            else:
-                dl = 0
-                total_length = int(total_length)
-                for data in r.iter_content(chunk_size=4096):
-                    dl += len(data)
-                    f.write(data)
+    def Command(self, id, msg):
+        if id == BTN_VIEW_SKFB:
+            url = Config.SKETCHFAB_URL + '/models/' + self.skfb_model.uid
+            webbrowser.open(url)
 
-        self.search_results['current'][uid].thumbnail_path = thumbnail_path
+        if id == BTN_IMPORT:
+            self.skfb_api.download_model(self.skfb_model.uid)
 
-
-class SketchfabModel:
-    def __init__(self, json_data):
-        self.title = str(json_data['name'])
-        self.author = json_data['user']['displayName']
-        self.uid = json_data['uid']
-        self.vertex_count = json_data['vertexCount']
-        self.face_count = json_data['faceCount']
-        self.thumbnail_path = ''
-
-        if 'archives' in json_data and  'gltf' in json_data['archives']:
-            self.download_size = Utils.humanify_size(json_data['archives']['gltf']['size'])
-        else:
-            self.download_size = None
-
-        self.thumbnail_url = os.path.join(Config.SKETCHFAB_THUMB_DIR, '{}.jpeg'.format(self.uid))
-
-        # Model info request
-        self.info_requested = False
-        self.license = None
-        self.animated = False
-
-        # Download url data
-        self.download_url = None
-        self.time_url_requested = None
-        self.url_expires = None
-
-    def print_model(self):
-        print(self.title)
+        return True

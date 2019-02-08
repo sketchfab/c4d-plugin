@@ -18,8 +18,8 @@ from c4d import plugins, utils, bitmaps, gui
 PLUGIN_ID = 1025251
 
 CURRENT_PATH = os.path.join('D:\\Softwares\\MAXON\\', 'plugins\\ImportGLTF')
-SAMPLE_PATH = CURRENT_PATH + '\\samples\\centaur'
-MODEL_PATH = SAMPLE_PATH + '\\scene.gltf'
+# SAMPLE_PATH = CURRENT_PATH + '\\samples\\centaur'
+# MODEL_PATH = SAMPLE_PATH + '\\scene.gltf'
 sys.path.insert(0, CURRENT_PATH)
 use_model_normals = False
 
@@ -29,16 +29,17 @@ from gltfio.imp.gltf2_io_binary import BinaryData
 doc = c4d.documents.GetActiveDocument()
 class ImportGLTF(plugins.ObjectData):
 
+    sample_directory = ''
     def __init__(self):
         pass
 
     @staticmethod
-    def run():
+    def run(filepath, uid=None):
         import gltfio
 
-        gltf = glTFImporter(MODEL_PATH)
+        gltf = glTFImporter(filepath)
         success, txt = gltf.read()
-
+        ImportGLTF.sample_directory = os.path.split(filepath)[0]
         print('no')
         imported_images = ImportGLTF.loadImages(gltf)
         for index in imported_images:
@@ -477,7 +478,8 @@ class ImportGLTF(plugins.ObjectData):
         dest_textures_path = ImportGLTF.get_texture_path()
         imported_images = {}
         for index, image in enumerate(gltf.data.images):
-            fullpath = os.path.join(SAMPLE_PATH, image.uri)
+            fullpath = os.path.join(ImportGLTF.sample_directory, image.uri).replace('/', '\\')
+            print(fullpath)
             if not os.path.exists(fullpath):
                 print('Texture not found')
                 return
