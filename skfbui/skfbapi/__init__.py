@@ -29,6 +29,8 @@ from collections import OrderedDict
 from PIL import Image
 import time
 
+from c4d.threading import C4DThread
+
 class Config:
     # Plugin Specific
     __author__ = "Sketchfab"
@@ -104,6 +106,7 @@ class Config:
 
     MAX_THUMBNAIL_HEIGHT = 512
     UI_THUMBNAIL_RESOLUTION = 128
+    MODEL_PLACEHOLDER_PATH = 'D:\\Softwares\\MAXON\\plugins\\ImportGLTF\\res\\model_placeholder.png'
 
 class Utils:
 
@@ -223,7 +226,6 @@ class Cache:
         with open(Cache.SKETCHFAB_CACHE_FILE, 'wb+') as f:
             f.write(json.dumps(cache_data).encode('utf-8'))
 
-
 class SketchfabApi:
     def __init__(self):
         self.access_token = ''
@@ -233,6 +235,7 @@ class SketchfabApi:
         self.next_results_url = None
         self.prev_results_url = None
         self.import_callback = None
+        self.request_callback = None
         self.search_results = {}
 
     def get_sketchfab_model(self, uid):
@@ -274,6 +277,10 @@ class SketchfabApi:
         else:
             self.prev_results_url = None
 
+        print("PARSED")
+        if self.request_callback:
+            self.request_callback()
+
     def handle_login(self, r, *args, **kwargs):
         if r.status_code == 200 and 'access_token' in r.json():
             self.access_token = r.json()['access_token']
@@ -288,6 +295,7 @@ class SketchfabApi:
             print('Cannot login.\n {}'.format(r.json()))
 
         self.is_logging = False
+        self.request_callback()
 
     def login(self, email, password):
         url = '{}&username={}&password={}'.format(Config.SKETCHFAB_OAUTH, urllib.quote(email), urllib.quote(password))
@@ -400,7 +408,13 @@ class SketchfabApi:
         self.get_archive(gltf['url'])
 
     def handle_thumbnail(self, r, *args, **kwargs):
+        return
+
         uid = r.url.split('/')[4]
+        if uid not in self.search_results['current']:
+            print("Thumbnail not found")
+            return
+
         if not os.path.exists(Config.SKETCHFAB_THUMB_DIR):
             os.makedirs(Config.SKETCHFAB_THUMB_DIR)
         preview_path = os.path.join(Config.SKETCHFAB_THUMB_DIR, uid) + '.jpeg'
@@ -417,8 +431,15 @@ class SketchfabApi:
                     dl += len(data)
                     f.write(data)
 
+        if not os.path.exists(preview_path):
+            print("Thumbnail not found")
+            return
 
-        im = Image.open(preview_path)
+        try:
+            im = Image.open(preview_path)
+        except IOError:
+            print("FAILED to import thumbnail")
+            return
 
         # Resize to UI_THUMBNAIL_RESOLUTION height and then crop UI_THUMBNAIL_RESOLUTION * UI_THUMBNAIL_RESOLUTION
         size = Config.UI_THUMBNAIL_RESOLUTION
@@ -513,13 +534,13 @@ class SketchfabApi:
 
 class SketchfabModel:
     def __init__(self, json_data):
-        self.title = str(json_data['name'])
+        self.title = json_data['name']
         self.author = json_data['user']['displayName']
         self.uid = json_data['uid']
         self.vertex_count = json_data['vertexCount']
         self.face_count = json_data['faceCount']
-        self.thumbnail_path = ''
-        self.preview_path = ''
+        self.thumbnail_path = Config.MODEL_PLACEHOLDER_PATH
+        self.preview_path = Config.MODEL_PLACEHOLDER_PATH
 
         if 'archives' in json_data and  'gltf' in json_data['archives']:
             self.download_size = Utils.humanify_size(json_data['archives']['gltf']['size'])
