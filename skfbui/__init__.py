@@ -14,9 +14,9 @@ from gltfio.imp.gltf2_io_gltf import glTFImporter
 from gltfio.imp.gltf2_io_binary import BinaryData
 from start import ImportGLTF
 
-# enums
-resultContainerIDStart = 100015 # + 24 since 24 results on page
+import time
 
+# enums
 UA_HEADER = 30000
 UA_ICON = 30001
 
@@ -29,16 +29,18 @@ GROUP_FIVE = 50005
 GROUP_RESULTS = 50006
 
 # class SkfbModelDialog(gui.GeDialog):
-BTN_SEARCH = 100001
-BTN_VIEW_SKFB = 100002
-BTN_IMPORT = 100003
+BTN_SEARCH = 10001
+BTN_VIEW_SKFB = 10002
+BTN_IMPORT = 10003
+BTN_NEXT_PAGE = 10004
+BTN_PREV_PAGE = 10005
 
-LB_SEARCH_QUERY = 100002
-EDITXT_SEARCH_QUERY = 100003
-CHK_IS_PBR = 100010
-CHK_IS_STAFFPICK = 100011
-CHK_IS_ANIMATED = 100012
-CHILD_VALUES = 100014
+LB_SEARCH_QUERY = 100010
+EDITXT_SEARCH_QUERY = 100011
+CHK_IS_PBR = 100012
+CHK_IS_STAFFPICK = 100013
+CHK_IS_ANIMATED = 100014
+CHILD_VALUES = 100015
 RDBN_FACE_COUNT = 100016
 
 CBOX_CATEGORY = 100020
@@ -52,6 +54,8 @@ CBOX_SORT_BY_ELT = 1000041
 CBOX_FACE_COUNT = 100050
 CBOX_FACE_COUNT_ELT = 100051
 # 100051 -> 100056 reserved for orderby
+
+resultContainerIDStart = 100061 # + 24 since 24 results on page
 
 OVERRIDE_DOWNLOAD = True
 MODEL_PATH = 'D:\\Softwares\\MAXON\\plugins\\ImportGLTF\\samples\\Camera\\scene.gltf'
@@ -121,21 +125,15 @@ class ThreadedLogin(C4DThread):
     def Main(self):
         self.skfb_api.request_callback = self.callback
 
-class ThreadedLogin(C4DThread):
-    def __init__(self, api, email, password, callback=None):
-        self.skfb_api = api
-        self.email = email
-        self.password = password
-        self.callback = callback
-
-    def Main(self):
-        self.skfb_api.request_callback = self.callback
-
 class SkfbPluginDialog(gui.GeDialog):
 
     userarea_paths_header = UserAreaPathsHeader()
+    last_refresh_time = 0.0
+
+    redraw_requested = False
 
     def InitValues(self):
+        self.SetTimer(50)
         print("Initializing")
         #DEBGUG
         imp.reload(start)
@@ -144,6 +142,7 @@ class SkfbPluginDialog(gui.GeDialog):
         from skfbapi import *
 
         self.skfb_api = SketchfabApi()
+        self.skfb_api.request_callback = self.refresh
         self.login = ThreadedLogin(self.skfb_api, None, None, self.refresh)
         self.login.Start()
 
@@ -153,7 +152,14 @@ class SkfbPluginDialog(gui.GeDialog):
 
         return True
     def refresh(self):
-        self.LayoutChanged(GROUP_RESULTS)
+        self.redraw_requested = True
+
+    def Timer(self, msg):
+        if not self.redraw_requested:
+            return
+
+        self.resultGroupWillRedraw()
+        self.redraw_requested = False
 
     def CreateLayout(self):
         self.SetTitle(Config.__plugin_title__)
@@ -169,7 +175,6 @@ class SkfbPluginDialog(gui.GeDialog):
         self.userarea_paths_header.LayoutChanged()
 
         self.GroupEnd()
-
 
         # Options menu
         self.MenuSubBegin("File")
@@ -188,7 +193,7 @@ class SkfbPluginDialog(gui.GeDialog):
         self.AddComboBox(id=CBOX_SORT_BY, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=250, inith=TEXT_WIDGET_HEIGHT)
         for index, sort_by in enumerate(Config.SKETCHFAB_SORT_BY):
             self.AddChild(id=CBOX_SORT_BY, subid=CBOX_SORT_BY_ELT + index, child=sort_by[1])
-        self.SetInt32(CBOX_SORT_BY, CBOX_SORT_BY_ELT)
+        self.SetInt32(CBOX_SORT_BY, CBOX_SORT_BY_ELT + 2)
 
         self.AddComboBox(id=CBOX_FACE_COUNT, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=250, inith=TEXT_WIDGET_HEIGHT)
         for index, face_count in enumerate(Config.SKETCHFAB_FACECOUNT):
@@ -235,9 +240,11 @@ class SkfbPluginDialog(gui.GeDialog):
     def create_results_ui(self):
         self.LayoutFlushGroup(GROUP_RESULTS)
         self.GroupBegin(GROUP_RESULTS, c4d.BFH_SCALEFIT|c4d.BFH_SCALEFIT, 6, 4, "Bitmap Example",0) #id, flags, columns, rows, grouptext, groupflags
-        # self.GroupBorder(c4d.BORDER_BLACK)
 
         if not self.result_valid:
+            return
+
+        if not 'current' in self.skfb_api.search_results:
             return
 
         for index, skfb_model in enumerate(self.skfb_api.search_results['current'].values()):
@@ -262,6 +269,7 @@ class SkfbPluginDialog(gui.GeDialog):
 
         self.GroupEnd()
         self.LayoutChanged(GROUP_RESULTS)
+        self.last_refresh_time = time.time()
 
     def trigger_search(self):
         final_query = Config.BASE_SEARCH
@@ -303,6 +311,13 @@ class SkfbPluginDialog(gui.GeDialog):
 
     def Command(self, id, msg):
         trigger_search = False
+
+        bc = c4d.BaseContainer()
+        if c4d.gui.GetInputState(c4d.BFM_INPUT_KEYBOARD, c4d.KEY_ENTER,bc):
+            if bc[c4d.BFM_INPUT_VALUE] == 1:
+                if self.IsActive(EDITXT_SEARCH_QUERY):
+                    trigger_search = True
+
         if id == BTN_SEARCH:
             trigger_search = True
 
@@ -332,7 +347,6 @@ class SkfbPluginDialog(gui.GeDialog):
 
         if trigger_search:
             self.trigger_search()
-            self.resultGroupWillRedraw()
 
         for i in range(24):
             if id == resultContainerIDStart + i:
@@ -341,7 +355,6 @@ class SkfbPluginDialog(gui.GeDialog):
                 self.model_dialog.Open(dlgtype=c4d.DLG_TYPE_MODAL_RESIZEABLE , defaultw=450, defaulth=300, xpos=-1, ypos=-1)
 
         return True
-
 
 
 class SkfbModelDialog(gui.GeDialog):
@@ -367,8 +380,6 @@ class SkfbModelDialog(gui.GeDialog):
         self.skfb_api.import_callback = self.progress_callback
 
     def CreateLayout(self):
-        self.SetTitle("MODEL PAGE")
-
         # Create the menu
         self.MenuFlushAll()
         # BIG Thumbnail

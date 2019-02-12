@@ -148,7 +148,15 @@ class Utils:
 
     @staticmethod
     def thumbnail_file_exists(uid):
-        return os.path.exists(os.path.join(Config.SKETCHFAB_THUMB_DIR, '{}.jpeg'.format(uid)))
+        path = Utils.build_thumbnail_path(uid)
+        return os.path.exists(path)
+
+    @staticmethod
+    def build_thumbnail_path(uid, is_thumbnail=False):
+        if is_thumbnail:
+            uid = uid + '_thumb'
+
+        return os.path.join(Config.SKETCHFAB_THUMB_DIR, '{}.jpeg'.format(uid))
 
     @staticmethod
     def clean_thumbnail_directory():
@@ -238,48 +246,51 @@ class SketchfabApi:
         self.request_callback = None
         self.search_results = {}
 
+        self.threads = []
+
     def get_sketchfab_model(self, uid):
         if 'current' in self.search_results and uid in self.search_results['current']:
             return self.search_results['current'][uid]
 
         return None
 
-    def parse_results(self, r, *args, **kwargs):
-        json_data = r.json()
+    # def parse_results(self, r, *args, **kwargs):
+    #     print('PARSE RESULTS')
+    #     json_data = r.json()
 
-        if 'current' in self.search_results:
-            self.search_results['current'].clear()
-            del self.search_results['current']
+    #     if 'current' in self.search_results:
+    #         self.search_results['current'].clear()
+    #         del self.search_results['current']
 
-        self.search_results['current'] = OrderedDict()
+    #     self.search_results['current'] = OrderedDict()
 
-        for result in list(json_data['results']):
+    #     for result in list(json_data['results']):
 
-            # Dirty fix to avoid parsing obsolete data
-            if 'current' not in self.search_results:
-                return
+    #         # Dirty fix to avoid parsing obsolete data
+    #         if 'current' not in self.search_results:
+    #             return
 
-            uid = result['uid']
-            self.search_results['current'][result['uid']] = SketchfabModel(result)
+    #         uid = result['uid']
+    #         self.search_results['current'][result['uid']] = SketchfabModel(result)
 
-            if not os.path.exists(os.path.join(Config.SKETCHFAB_THUMB_DIR, uid) + '.jpeg'):
-                self.request_thumbnail(result['thumbnails'], self.handle_thumbnail)
-            # elif uid not in skfb.custom_icons:
-            #     self.custom_icons.load(uid, os.path.join(Config.SKETCHFAB_THUMB_DIR, "{}.jpeg".format(uid)), 'IMAGE')
+    #         if not Util.thumbnail_file_exists(uid):
+    #             self.request_thumbnail(result['thumbnails'], self.handle_thumbnail)
+    #         # elif uid not in skfb.custom_icons:
+    #         #     self.custom_icons.load(uid, os.path.join(Config.SKETCHFAB_THUMB_DIR, "{}.jpeg".format(uid)), 'IMAGE')
 
-        if json_data['next']:
-            self.next_results_url = json_data['next']
-        else:
-            self.next_results_url = None
+    #     if json_data['next']:
+    #         self.next_results_url = json_data['next']
+    #     else:
+    #         self.next_results_url = None
 
-        if json_data['previous']:
-            self.prev_results_url = json_data['previous']
-        else:
-            self.prev_results_url = None
+    #     if json_data['previous']:
+    #         self.prev_results_url = json_data['previous']
+    #     else:
+    #         self.prev_results_url = None
 
-        print("PARSED")
-        if self.request_callback:
-            self.request_callback()
+    #     print("PARSED")
+    #     if self.request_callback:
+    #         self.request_callback()
 
     def handle_login(self, r, *args, **kwargs):
         if r.status_code == 200 and 'access_token' in r.json():
@@ -369,12 +380,24 @@ class SketchfabApi:
         model.animated = 'Yes ({} animation(s))'.format(anim_count) if anim_count > 0 else 'No'
         skfb.search_results['current'][uid] = model
 
-    def search(self, query):
-        search_query = '{}{}'.format(Config.BASE_SEARCH, query)
-        requests.get(query, hooks={'response': self.parse_results})
+    def search(self, url):
+        threaded = ThreadedSearch(self, url)
+        threaded.Start()
+        self.threads.append(threaded)
 
-    def search_cursor(self, url, search_cb):
-        requests.get(url, hooks={'response': search_cb})
+        terminathread = []
+        for i in range(len(self.threads) - 1):
+            if not self.threads[i].IsRunning():
+                terminathread.append(self.threads[i])
+
+        for thread in terminathread:
+            self.threads.remove(thread)
+
+    def search_next(self):
+        self.search(self.next_results_url)
+
+    def search_prev(self):
+        self.search(self.prev_results_url)
 
     def download_model(self, uid):
         skfb_model = self.get_sketchfab_model(uid)
@@ -406,63 +429,6 @@ class SketchfabApi:
         skfb_model.url_expires = gltf['expires']
 
         self.get_archive(gltf['url'])
-
-    def handle_thumbnail(self, r, *args, **kwargs):
-        return
-
-        uid = r.url.split('/')[4]
-        if uid not in self.search_results['current']:
-            print("Thumbnail not found")
-            return
-
-        if not os.path.exists(Config.SKETCHFAB_THUMB_DIR):
-            os.makedirs(Config.SKETCHFAB_THUMB_DIR)
-        preview_path = os.path.join(Config.SKETCHFAB_THUMB_DIR, uid) + '.jpeg'
-
-        with open(preview_path, "wb") as f:
-            total_length = r.headers.get('content-length')
-
-            if total_length is None and r.content:
-                f.write(r.content)
-            else:
-                dl = 0
-                total_length = int(total_length)
-                for data in r.iter_content(chunk_size=4096):
-                    dl += len(data)
-                    f.write(data)
-
-        if not os.path.exists(preview_path):
-            print("Thumbnail not found")
-            return
-
-        try:
-            im = Image.open(preview_path)
-        except IOError:
-            print("FAILED to import thumbnail")
-            return
-
-        # Resize to UI_THUMBNAIL_RESOLUTION height and then crop UI_THUMBNAIL_RESOLUTION * UI_THUMBNAIL_RESOLUTION
-        size = Config.UI_THUMBNAIL_RESOLUTION
-
-        width, height = im.size
-        factor = size / height
-
-        width *= factor
-        height *= factor
-        im = im.resize((int(width), int(height)))
-
-        left = (width - size)/2
-        top = (height - size)/2
-        right = (width + size)/2
-        bottom = (height + size)/2
-
-        im = im.crop((left, top, right, bottom))
-
-        thumbnail_path = os.path.join(Config.SKETCHFAB_THUMB_DIR, uid) + '_thumb.jpeg'
-        im.save(thumbnail_path, "JPEG")
-
-        self.search_results['current'][uid].preview_path = preview_path
-        self.search_results['current'][uid].thumbnail_path = thumbnail_path
 
     def get_archive(self, url):
         def unzip_archive(archive_path):
@@ -562,3 +528,117 @@ class SketchfabModel:
 
     def print_model(self):
         print(self.title)
+
+class ThreadedSearch(C4DThread):
+    def  __init__(self, api, url):
+        C4DThread.__init__(self)
+        self.skfb_api = api
+        self.url = url
+
+    def Main(self):
+        requests.get(self.url, hooks={'response': self.parse_results})
+
+    def parse_results(self, r, *args, **kwargs):
+        json_data = r.json()
+
+        if 'current' in self.skfb_api.search_results:
+            self.skfb_api.search_results['current'].clear()
+            del self.skfb_api.search_results['current']
+
+        self.skfb_api.search_results['current'] = OrderedDict()
+
+        for result in list(json_data['results']):
+            model = SketchfabModel(result)
+            self.skfb_api.search_results['current'][model.uid] = model
+            if not Utils.thumbnail_file_exists(model.uid):
+                self.skfb_api.request_thumbnail(result['thumbnails'], self.handle_thumbnail)
+            else:
+                model.preview_path =  Utils.build_thumbnail_path(model.uid)
+                model.thumbnail_path = Utils.build_thumbnail_path(model.uid, is_thumbnail=True)
+
+        if json_data['next']:
+            self.skfb_api.next_results_url = json_data['next']
+        else:
+            self.skfb_api.next_results_url = None
+
+        if json_data['previous']:
+            self.skfb_api.prev_results_url = json_data['previous']
+        else:
+            self.skfb_api.prev_results_url = None
+
+        if self.skfb_api.request_callback:
+            self.skfb_api.request_callback()
+
+    def handle_thumbnail(self, r, *args, **kwargs):
+        def get_resize_resolution(im):
+            size = Config.UI_THUMBNAIL_RESOLUTION
+            width, height = im.size
+            factor = size / height
+
+            width *= factor
+            height *= factor
+
+            return (int(width), int(height))
+
+        def get_square_crop_resolution(im):
+            width, height = im.size
+            size = Config.UI_THUMBNAIL_RESOLUTION
+
+            left = (width - size)/2
+            top = (height - size)/2
+            right = (width + size)/2
+            bottom = (height + size)/2
+
+            return (left, top, right, bottom)
+
+        uid = Utils.get_uid_from_thumbnail_url(r.url)
+
+        if uid not in self.skfb_api.search_results['current']:
+            print("Not in results not found")
+            return
+
+        if not os.path.exists(Config.SKETCHFAB_THUMB_DIR):
+            os.makedirs(Config.SKETCHFAB_THUMB_DIR)
+
+        preview_path = Utils.build_thumbnail_path(uid)
+
+        if os.path.exists(preview_path):
+            print("Thumbnail already here")
+            return
+
+        with open(preview_path, "wb") as f:
+            total_length = r.headers.get('content-length')
+
+            if total_length is None and r.content:
+                f.write(r.content)
+            else:
+                dl = 0
+                total_length = int(total_length)
+                for data in r.iter_content(chunk_size=4096):
+                    dl += len(data)
+                    f.write(data)
+
+        if not os.path.exists(preview_path):
+            print("Thumbnail not found")
+            return
+
+        try:
+            im = Image.open(preview_path)
+        except IOError:
+            print("FAILED to import thumbnail")
+            return
+
+        # Resize for preview (model page)
+        resize_res = get_resize_resolution(im)
+        im = im.resize(resize_res, resample=Image.BILINEAR)
+
+        # Crop to square for results (should be replaced by code using preview image)
+        crop_res = get_square_crop_resolution(im)
+        im = im.crop(crop_res)
+
+        thumbnail_path = Utils.build_thumbnail_path(uid, is_thumbnail=True)
+        im.save(thumbnail_path, "JPEG")
+
+        self.skfb_api.search_results['current'][uid].preview_path = preview_path
+        self.skfb_api.search_results['current'][uid].thumbnail_path = thumbnail_path
+        self.skfb_api.request_callback()
