@@ -31,6 +31,10 @@ import time
 
 from c4d.threading import C4DThread
 
+from gltfio.imp.gltf2_io_gltf import glTFImporter
+from gltfio.imp.gltf2_io_binary import BinaryData
+from start import ImportGLTF
+
 class Config:
     # Plugin Specific
     __author__ = "Sketchfab"
@@ -48,7 +52,7 @@ class Config:
 
     ADDON_NAME = 'io_sketchfab'
     GITHUB_REPOSITORY_URL = 'https://github.com/sketchfab/glTF-Blender-IO'
-    GITHUB_REPOSITORY_API_URL = 'https://api.github.com/repos/sketchfab/glTF-Blender-IO'
+    GITHUB_REPOSITORY_API_URL = 'https://api.github.com/repos/sketchfab/c4d-plugin'
     SKETCHFAB_REPORT_URL = 'https://help.sketchfab.com/hc/en-us/requests/new?type=exporters&subject=Blender+Plugin'
 
     SKETCHFAB_URL = 'https://sketchfab.com'
@@ -206,7 +210,7 @@ class Utils:
 
 class Cache:
     SKETCHFAB_CACHE_FILE = os.path.join(os.path.dirname(__file__), ".cache")
-
+    @staticmethod
     def read():
         if not os.path.exists(Cache.SKETCHFAB_CACHE_FILE):
             return {}
@@ -215,17 +219,20 @@ class Cache:
             data = f.read().decode('utf-8')
             return json.loads(data)
 
+    @staticmethod
     def get_key(key):
         cache_data = Cache.read()
         if key in cache_data:
             return cache_data[key]
 
+    @staticmethod
     def save_key(key, value):
         cache_data = Cache.read()
         cache_data[key] = value
         with open(Cache.SKETCHFAB_CACHE_FILE, 'wb+') as f:
             f.write(json.dumps(cache_data).encode('utf-8'))
 
+    @staticmethod
     def delete_key(key):
         cache_data = Cache.read()
         if key in cache_data:
@@ -234,19 +241,69 @@ class Cache:
         with open(Cache.SKETCHFAB_CACHE_FILE, 'wb+') as f:
             f.write(json.dumps(cache_data).encode('utf-8'))
 
+
+class ThreadedRequest(C4DThread):
+    def __init__(self, url, headers, callback=None):
+        C4DThread.__init__(self)
+        self.url = url
+        self.headers = headers if headers else {}
+        self.callback = callback
+
+    def Main(self):
+        requests.get(self.url, headers=self.headers, hooks={'response': self.callback})
+
+
 class SketchfabApi:
     def __init__(self):
         self.access_token = ''
         self.headers = {}
         self.display_name = ''
         self.plan_type = ''
+        self.is_user_pro = False
         self.next_results_url = None
         self.prev_results_url = None
+
+        self.latest_release_version = None
+        self.search_results = {}
+        self.threads = []
+
+        self.login_callback = None
         self.import_callback = None
         self.request_callback = None
-        self.search_results = {}
 
-        self.threads = []
+    def parse_plugin_version(self, request, *args, **kwargs):
+        response = request.json()
+        print(response)
+        return
+        if response and len(response) and 'tag_name' in response[0]:
+            latest_release_version = response[0]['tag_name']
+            current_version = str(bl_info['version']).replace(',', '').replace('(', '').replace(')', '').replace(' ', '')
+
+            if latest_release_version == current_version:
+                print('You are using the latest version({})'.format(response[0]['tag_name']))
+            else:
+                print('A new version is available: {}'.format(response[0]['tag_name']))
+        else:
+            print('Failed to retrieve plugin version')
+            self.latest_release_version = -1
+
+    def connect_to_sketchfab(self):
+        self.check_plugin_version()
+        self.check_user_logged()
+        self.request_user_info()
+
+    def check_plugin_version(self):
+        thread = ThreadedRequest(Config.SKETCHFAB_PLUGIN_VERSION, self.headers, self.parse_plugin_version)
+        thread.Start()
+        self.threads.append(thread)
+        self.clear_threads()
+
+    def request_user_info(self):
+        thread = ThreadedRequest(Config.SKETCHFAB_ME, self.headers, self.parse_user_info)
+        thread.Start()
+        self.threads.append(thread)
+        self.clear_threads()
+
 
     def get_sketchfab_model(self, uid):
         if 'current' in self.search_results and uid in self.search_results['current']:
@@ -254,49 +311,12 @@ class SketchfabApi:
 
         return None
 
-    # def parse_results(self, r, *args, **kwargs):
-    #     print('PARSE RESULTS')
-    #     json_data = r.json()
-
-    #     if 'current' in self.search_results:
-    #         self.search_results['current'].clear()
-    #         del self.search_results['current']
-
-    #     self.search_results['current'] = OrderedDict()
-
-    #     for result in list(json_data['results']):
-
-    #         # Dirty fix to avoid parsing obsolete data
-    #         if 'current' not in self.search_results:
-    #             return
-
-    #         uid = result['uid']
-    #         self.search_results['current'][result['uid']] = SketchfabModel(result)
-
-    #         if not Util.thumbnail_file_exists(uid):
-    #             self.request_thumbnail(result['thumbnails'], self.handle_thumbnail)
-    #         # elif uid not in skfb.custom_icons:
-    #         #     self.custom_icons.load(uid, os.path.join(Config.SKETCHFAB_THUMB_DIR, "{}.jpeg".format(uid)), 'IMAGE')
-
-    #     if json_data['next']:
-    #         self.next_results_url = json_data['next']
-    #     else:
-    #         self.next_results_url = None
-
-    #     if json_data['previous']:
-    #         self.prev_results_url = json_data['previous']
-    #     else:
-    #         self.prev_results_url = None
-
-    #     print("PARSED")
-    #     if self.request_callback:
-    #         self.request_callback()
-
     def handle_login(self, r, *args, **kwargs):
+        print(r.json())
         if r.status_code == 200 and 'access_token' in r.json():
             self.access_token = r.json()['access_token']
             # Cache.save_key('username', login_props.email)
-            # Cache.save_key('access_token', browser_props.skfb_api.access_token)
+            Cache.save_key('access_token', self.access_token)
 
             self.build_headers()
             self.request_user_info()
@@ -308,6 +328,11 @@ class SketchfabApi:
         self.is_logging = False
         self.request_callback()
 
+    def check_user_logged(self):
+        access_token = Cache.get_key('access_token')
+        self.access_token = access_token
+        self.build_headers()
+
     def login(self, email, password):
         url = '{}&username={}&password={}'.format(Config.SKETCHFAB_OAUTH, urllib.quote(email), urllib.quote(password))
         requests.post(url, hooks={'response': self.handle_login})
@@ -317,33 +342,62 @@ class SketchfabApi:
 
     def is_user_logged(self):
         if self.access_token and self.headers:
+            print('{} {}'.format(self.display_name, self.plan_type))
             return True
 
         return False
 
+    def clear_threads(self):
+        terminathread = []
+        for i in range(len(self.threads) - 1):
+            if not self.threads[i].IsRunning():
+                terminathread.append(self.threads[i])
+
+        for thread in terminathread:
+            self.threads.remove(thread)
+
+    def download_model(self, uid):
+        downloader = ThreadedModelDownload(self, uid, self.import_model)
+        downloader.Start()
+
+        self.threads.append(downloader)
+        self.clear_threads()
+
+    # Debug only, to override download
+    def import_model(self, filepath, uid):
+        importer = ThreadedImporter(filepath, uid, self.import_callback)
+        importer.Start()
+
+        self.threads.append(importer)
+        self.clear_threads()
+
     def logout(self):
         self.access_token = ''
         self.headers = {}
+        self.is_user_pro = False
+        self.display_name = ''
+        self.plan_type = ''
         Cache.delete_key('username')
         Cache.delete_key('access_token')
         Cache.delete_key('key')
 
-    def request_user_info(self):
-        requests.get(Config.SKETCHFAB_ME, headers=self.headers, hooks={'response': self.parse_user_info})
-
     def get_user_info(self):
         if self.display_name and self.plan_type:
-            return 'as {} ({})'.format(self.display_name, self.plan_type)
+            return '{} ({})'.format(self.display_name, self.plan_type)
         else:
-            return ('', '')
+            return ''
 
     def parse_user_info(self, r, *args, **kargs):
+        print(r)
         if r.status_code == 200:
             user_data = r.json()
             self.display_name = user_data['displayName']
             self.plan_type = user_data['account']
+            print(self.display_name)
+            print(self.plan_type)
+            self.is_user_pro = self.plan_type != 'basic'
+            self.login_callback()
         else:
-            print('Invalid access token')
             self.access_token = ''
             self.headers = {}
 
@@ -384,14 +438,7 @@ class SketchfabApi:
         threaded = ThreadedSearch(self, url)
         threaded.Start()
         self.threads.append(threaded)
-
-        terminathread = []
-        for i in range(len(self.threads) - 1):
-            if not self.threads[i].IsRunning():
-                terminathread.append(self.threads[i])
-
-        for thread in terminathread:
-            self.threads.remove(thread)
+        self.clear_threads()
 
     def search_next(self):
         self.search(self.next_results_url)
@@ -399,8 +446,60 @@ class SketchfabApi:
     def search_prev(self):
         self.search(self.prev_results_url)
 
+
+class SketchfabModel:
+    def __init__(self, json_data):
+        self.title = json_data['name']
+        self.author = json_data['user']['displayName']
+        self.uid = json_data['uid']
+        self.vertex_count = json_data['vertexCount']
+        self.face_count = json_data['faceCount']
+        self.thumbnail_path = Config.MODEL_PLACEHOLDER_PATH
+        self.preview_path = Config.MODEL_PLACEHOLDER_PATH
+
+        if 'archives' in json_data and  'gltf' in json_data['archives']:
+            self.download_size = Utils.humanify_size(json_data['archives']['gltf']['size'])
+        else:
+            self.download_size = None
+
+        self.thumbnail_url = os.path.join(Config.SKETCHFAB_THUMB_DIR, '{}.jpeg'.format(self.uid))
+
+
+        # Model info request
+        self.info_requested = False
+        self.license = None
+        self.animated = False
+
+        # Download url data
+        self.download_url = None
+        self.time_url_requested = None
+        self.url_expires = None
+
+
+class ThreadedImporter(C4DThread):
+    def __init__(self, filepath, uid, progress_callback=None):
+        C4DThread.__init__(self)
+        self.filepath = filepath
+        self.uid = uid
+        self.importer = ImportGLTF(progress_callback)
+
+    def Main(self):
+        self.importer.run(self.filepath, self.uid)
+
+
+class ThreadedModelDownload(C4DThread):
+    def __init__(self, api, uid, import_callback):
+        C4DThread.__init__(self)
+        self.skfb_api = api
+        self.uid = uid
+        self.import_callback = import_callback
+        self.importer = ImportGLTF(self.import_callback)
+
+    def Main(self):
+        self.download_model(self.uid)
+
     def download_model(self, uid):
-        skfb_model = self.get_sketchfab_model(uid)
+        skfb_model = self.skfb_api.get_sketchfab_model(uid)
         if skfb_model.download_url:
             # Check url sanity
             if time.time() - skfb_model.time_url_requested < skfb_model.url_expires:
@@ -410,20 +509,20 @@ class SketchfabApi:
                 skfb_model.download_url = None
                 skfb_model.url_expires = None
                 skfb_model.time_url_requested = None
-                requests.get(Utils.build_download_url(uid), headers=self.headers, hooks={'response': self.handle_download})
+                requests.get(Utils.build_download_url(uid), headers=self.skfb_api.headers, hooks={'response': self.handle_download})
         else:
-            requests.get(Utils.build_download_url(uid), headers=self.headers, hooks={'response': self.handle_download})
+            requests.get(Utils.build_download_url(uid), headers=self.skfb_api.headers, hooks={'response': self.handle_download})
 
     def handle_download(self, r, *args, **kwargs):
         if r.status_code != 200 or 'gltf' not in r.json():
             print('Download not available for this model')
-            print(r)
+            print(r.text)
             return
 
         uid = Utils.get_uid_from_model_url(r.url)
 
         gltf = r.json()['gltf']
-        skfb_model = self.get_sketchfab_model(uid)
+        skfb_model = self.skfb_api.get_sketchfab_model(uid)
         skfb_model.download_url = gltf['url']
         skfb_model.time_url_requested = time.time()
         skfb_model.url_expires = gltf['expires']
@@ -486,10 +585,9 @@ class SketchfabApi:
             print('Model already downloaded')
 
         gltf_path, gltf_zip = unzip_archive(archive_path)
-        print(gltf_path)
         if gltf_path:
             try:
-                self.import_callback(gltf_path, uid)
+                self.import_callback(gltf_path, self.uid)
             except Exception as e:
                 import traceback
                 print(traceback.format_exc())
@@ -498,36 +596,6 @@ class SketchfabApi:
             model = self.get_sketchfab_model(uid)
             # set_import_status("Import model ({})".format(model.download_size if model.download_size else 'fetching data'))
 
-class SketchfabModel:
-    def __init__(self, json_data):
-        self.title = json_data['name']
-        self.author = json_data['user']['displayName']
-        self.uid = json_data['uid']
-        self.vertex_count = json_data['vertexCount']
-        self.face_count = json_data['faceCount']
-        self.thumbnail_path = Config.MODEL_PLACEHOLDER_PATH
-        self.preview_path = Config.MODEL_PLACEHOLDER_PATH
-
-        if 'archives' in json_data and  'gltf' in json_data['archives']:
-            self.download_size = Utils.humanify_size(json_data['archives']['gltf']['size'])
-        else:
-            self.download_size = None
-
-        self.thumbnail_url = os.path.join(Config.SKETCHFAB_THUMB_DIR, '{}.jpeg'.format(self.uid))
-
-
-        # Model info request
-        self.info_requested = False
-        self.license = None
-        self.animated = False
-
-        # Download url data
-        self.download_url = None
-        self.time_url_requested = None
-        self.url_expires = None
-
-    def print_model(self):
-        print(self.title)
 
 class ThreadedSearch(C4DThread):
     def  __init__(self, api, url):

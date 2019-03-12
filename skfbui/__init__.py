@@ -6,13 +6,12 @@ from c4d.threading import C4DThread
 
 import start
 import imp
+import textwrap
 import requests
 from .skfbapi import *
 import webbrowser
 
-from gltfio.imp.gltf2_io_gltf import glTFImporter
-from gltfio.imp.gltf2_io_binary import BinaryData
-from start import ImportGLTF
+
 
 import time
 
@@ -21,27 +20,35 @@ UA_HEADER = 30000
 UA_ICON = 30001
 
 GROUP_WRAPPER = 50000
-GROUP_ONE = 50001
+GROUP_LOGIN = 50001
 GROUP_SEARCH = 50002
-GROUP_THREE = 50003
-GROUP_FOUR = 50004
+GROUP_QUERY = 50003
+GROUP_FILTERS = 50004
 GROUP_FIVE = 50005
 GROUP_RESULTS = 50006
+GROUP_LOGIN_CONNECTED = 50007
 
-# class SkfbModelDialog(gui.GeDialog):
 BTN_SEARCH = 10001
 BTN_VIEW_SKFB = 10002
 BTN_IMPORT = 10003
 BTN_NEXT_PAGE = 10004
 BTN_PREV_PAGE = 10005
+BTN_LOGIN = 10006
+BTN_CONNECT_SKETCHFAB = 10080
+
+EDITXT_LOGIN_EMAIL = 10007
+EDITXT_LOGIN_PASSWORD = 10008
 
 LB_SEARCH_QUERY = 100010
 EDITXT_SEARCH_QUERY = 100011
-CHK_IS_PBR = 100012
-CHK_IS_STAFFPICK = 100013
-CHK_IS_ANIMATED = 100014
-CHILD_VALUES = 100015
-RDBN_FACE_COUNT = 100016
+CHK_MY_MODELS = 100012
+CHK_IS_PBR = 100013
+CHK_IS_STAFFPICK = 100014
+CHK_IS_ANIMATED = 100015
+CHILD_VALUES = 100016
+RDBN_FACE_COUNT = 100017
+LB_FACE_COUNT = 100018
+LB_SORT_BY = 100019
 
 CBOX_CATEGORY = 100020
 CBOX_CATEGORY_ELT = 100021
@@ -55,9 +62,15 @@ CBOX_FACE_COUNT = 100050
 CBOX_FACE_COUNT_ELT = 100051
 # 100051 -> 100056 reserved for orderby
 
+TXT_CONNECT_STATUS_CONNECTED = 100054
+TXT_CONNECT_STATUS = 100055
+TXT_EMAIL = 49999
+TXT_PASSWORD = 49999
 resultContainerIDStart = 100061 # + 24 since 24 results on page
+resultNameIDStart = 100086
 
-OVERRIDE_DOWNLOAD = True
+
+OVERRIDE_DOWNLOAD = False
 MODEL_PATH = 'D:\\Softwares\\MAXON\\plugins\\ImportGLTF\\samples\\Camera\\scene.gltf'
 HEADER_PATH = 'D:\\Softwares\\MAXON\\plugins\\ImportGLTF\\res\\SketchfabHeader.png'
 TEXT_WIDGET_HEIGHT=10
@@ -104,17 +117,6 @@ class UserAreaPathsHeader(gui.GeUserArea):
             self.DrawBitmap(self.bmp, 0, 0, self.bmp.GetBw(), self.bmp.GetBh(),
                             x1, y1, x2, y2, c4d.BMP_NORMALSCALED | c4d.BMP_ALLOWALPHA)
 
-class ThreadedImporter(C4DThread):
-    def __init__(self, filepath, uid, progress_callback=None):
-        C4DThread.__init__(self)
-        self.filepath = filepath
-        self.uid = uid
-        self.importer = ImportGLTF(progress_callback)
-
-    def Main(self):
-        self.importer.run(self.filepath, self.uid)
-
-
 class ThreadedLogin(C4DThread):
     def __init__(self, api, email, password, callback=None):
         self.skfb_api = api
@@ -130,21 +132,17 @@ class SkfbPluginDialog(gui.GeDialog):
     userarea_paths_header = UserAreaPathsHeader()
     last_refresh_time = 0.0
 
-    redraw_requested = False
+    redraw_login = False
+    redraw_results = False
+    status_widget = None
 
     def InitValues(self):
         self.SetTimer(50)
-        print("Initializing")
         #DEBGUG
         imp.reload(start)
         imp.reload(skfbapi)
         from start import *
         from skfbapi import *
-
-        self.skfb_api = SketchfabApi()
-        self.skfb_api.request_callback = self.refresh
-        self.login = ThreadedLogin(self.skfb_api, None, None, self.refresh)
-        self.login.Start()
 
         self.buttons = []
         self.containers = []
@@ -152,37 +150,105 @@ class SkfbPluginDialog(gui.GeDialog):
 
         return True
     def refresh(self):
-        self.redraw_requested = True
+        self.redraw_login = True
+        self.redraw_results = True
 
     def Timer(self, msg):
-        if not self.redraw_requested:
-            return
+        if self.redraw_results:
+            self.resultGroupWillRedraw()
+            self.redraw_results = False
 
-        self.resultGroupWillRedraw()
-        self.redraw_requested = False
+        if self.redraw_login:
+            self.draw_login_ui()
+            self.redraw_login = False
+
+    # def update_login(self):
+    #     self.draw_login_ui()
 
     def CreateLayout(self):
         self.SetTitle(Config.__plugin_title__)
-
-        # Create the menu
-        self.MenuFlushAll()
-
-        self.GroupSpace(0, 0)
-        self.GroupBorderSpace(0, 0, 0, 0)
-
-        self.AddUserArea(UA_HEADER, c4d.BFH_LEFT)
+        self.AddUserArea(UA_HEADER, c4d.BFH_CENTER)
         self.AttachUserArea(self.userarea_paths_header, UA_HEADER)
         self.userarea_paths_header.LayoutChanged()
 
-        self.GroupEnd()
+        # Setup API
+        self.skfb_api = SketchfabApi()
+        self.skfb_api.request_callback = self.refresh
+        self.skfb_api.login_callback = self.draw_login_ui
 
-        # Options menu
+        self.login = ThreadedLogin(self.skfb_api, None, None, self.refresh)
+        self.login.Start()
+
+        # Create the menu
+        self.MenuFlushAll()
         self.MenuSubBegin("File")
         self.MenuAddCommand(c4d.IDM_CM_CLOSEWINDOW)
         self.MenuSubEnd()
-        self.AddStaticText(id=LB_SEARCH_QUERY, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=170, inith=TEXT_WIDGET_HEIGHT, name="Search")
-        self.AddEditText(id=EDITXT_SEARCH_QUERY, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=250, inith=TEXT_WIDGET_HEIGHT)
-        self.AddButton(id=BTN_SEARCH, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Import")
+        self.MenuFinished()
+
+        self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+        self.draw_login_ui()
+        self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+        self.draw_search_ui()
+        self.draw_filters_ui()
+        self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+        return True
+
+    def draw_login_ui(self):
+        self.LayoutFlushGroup(GROUP_LOGIN)
+        self.GroupBegin(id=GROUP_LOGIN,
+                        flags=c4d.BFH_RIGHT,
+                        cols=5,
+                        rows=1,
+                        title="Login",
+                        groupflags=c4d.BORDER_NONE)
+        # self.AddStaticText(id=TXT_CONNECT_STATUS, flags=c4d.BFH_LEFT, initw=0, inith=0, name='Connect to your user account')
+        if hasattr(self, "skfb_api") and self.skfb_api.is_user_logged():
+            self.AddStaticText(id=TXT_EMAIL, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Connected as " + self.skfb_api.display_name)
+            self.AddButton(id=BTN_CONNECT_SKETCHFAB, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Logout")
+        else:
+            self.AddStaticText(id=TXT_EMAIL, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Email:")
+            self.AddEditText(id=EDITXT_LOGIN_EMAIL, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=350, inith=TEXT_WIDGET_HEIGHT)
+            self.AddStaticText(id=TXT_EMAIL, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Password:")
+            self.AddEditText(id=EDITXT_LOGIN_PASSWORD, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=350, inith=TEXT_WIDGET_HEIGHT, editflags=c4d.EDITTEXT_PASSWORD)
+            self.AddButton(id=BTN_LOGIN, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Login")
+
+        self.GroupEnd()
+        self.LayoutChanged(GROUP_LOGIN)
+
+    def refresh_login_ui(self):
+        self.LayoutFlushGroup(GROUP_LOGIN)
+        self.draw_login_ui()
+        self.LayoutChanged(GROUP_LOGIN)
+
+    def draw_search_ui(self):
+        self.GroupBegin(id=GROUP_QUERY,
+                        flags=c4d.BFH_LEFT | c4d.BFV_FIT,
+                        cols=4,
+                        rows=1,
+                        title="Search",
+                        groupflags=c4d.BORDER_NONE)
+
+        mymodels_caption = 'My models ' + str('(PRO)' if not self.skfb_api.is_user_pro else '')
+        self.AddStaticText(id=LB_SEARCH_QUERY, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=90, inith=TEXT_WIDGET_HEIGHT, name=" Search: ")
+        self.AddEditText(id=EDITXT_SEARCH_QUERY, flags=c4d.BFH_LEFT| c4d.BFV_CENTER, initw=500, inith=TEXT_WIDGET_HEIGHT)
+        self.AddButton(id=BTN_SEARCH, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Search")
+        self.AddCheckbox(id=CHK_MY_MODELS, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=250, inith=TEXT_WIDGET_HEIGHT, name=mymodels_caption)
+        self.Enable(CHK_MY_MODELS, self.skfb_api.is_user_pro)
+        self.GroupEnd()
+
+    def refresh_search_ui(self):
+        self.LayoutFlushGroup(GROUP_QUERY)
+        self.draw_search_ui()
+        self.LayoutChanged(GROUP_QUERY)
+
+    def draw_filters_ui(self):
+        self.GroupBegin(id=GROUP_FILTERS,
+                flags=c4d.BFH_SCALEFIT | c4d.BFV_FIT,
+                cols=9,
+                rows=1,
+                title="Search",
+                groupflags=c4d.BORDER_NONE)
 
         # Categories
         self.AddComboBox(id=CBOX_CATEGORY, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=250, inith=TEXT_WIDGET_HEIGHT)
@@ -190,41 +256,29 @@ class SkfbPluginDialog(gui.GeDialog):
             self.AddChild(id=CBOX_CATEGORY, subid=CBOX_CATEGORY_ELT + index, child=category[2])
         self.SetInt32(CBOX_CATEGORY, CBOX_CATEGORY_ELT)
 
-        self.AddComboBox(id=CBOX_SORT_BY, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=250, inith=TEXT_WIDGET_HEIGHT)
-        for index, sort_by in enumerate(Config.SKETCHFAB_SORT_BY):
-            self.AddChild(id=CBOX_SORT_BY, subid=CBOX_SORT_BY_ELT + index, child=sort_by[1])
-        self.SetInt32(CBOX_SORT_BY, CBOX_SORT_BY_ELT + 2)
+        self.AddCheckbox(id=CHK_IS_PBR, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=100, inith=TEXT_WIDGET_HEIGHT, name='PBR')
+        self.AddCheckbox(id=CHK_IS_STAFFPICK, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=120, inith=TEXT_WIDGET_HEIGHT, name='Staffpick')
+        self.AddCheckbox(id=CHK_IS_ANIMATED, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=150, inith=TEXT_WIDGET_HEIGHT, name='Animated')
 
+        self.AddStaticText(id=LB_FACE_COUNT, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=90, inith=TEXT_WIDGET_HEIGHT, name="Face count: ")
         self.AddComboBox(id=CBOX_FACE_COUNT, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=250, inith=TEXT_WIDGET_HEIGHT)
         for index, face_count in enumerate(Config.SKETCHFAB_FACECOUNT):
             self.AddChild(id=CBOX_FACE_COUNT, subid=CBOX_FACE_COUNT_ELT + index, child=face_count[1])
         self.SetInt32(CBOX_FACE_COUNT, CBOX_FACE_COUNT_ELT)
 
-        self.AddCheckbox(id=CHK_IS_PBR, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=70, inith=TEXT_WIDGET_HEIGHT, name='PBR')
-        self.AddCheckbox(id=CHK_IS_STAFFPICK, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=170, inith=TEXT_WIDGET_HEIGHT, name='Staffpick')
-        self.AddCheckbox(id=CHK_IS_ANIMATED, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=170, inith=TEXT_WIDGET_HEIGHT, name='Animated')
-
-        self.MenuFinished()
-
-        self.GroupBegin(id=GROUP_WRAPPER,
-                        flags=c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
-                        cols=1,
-                        rows=1,
-                        title="Wrapper",
-                        groupflags=c4d.BORDER_NONE)
-
-
-        self.GroupBegin(id=GROUP_SEARCH,
-                        flags=c4d.BFH_SCALEFIT,
-                        cols=2,
-                        rows=1)
-
-        self.GroupSpace(40, 10)
-        self.GroupBorderSpace(6, 6, 6, 6)
+        self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
+        self.AddStaticText(id=LB_FACE_COUNT, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=90, inith=TEXT_WIDGET_HEIGHT, name="Sort by: ")
+        self.AddComboBox(id=CBOX_SORT_BY, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=90, inith=TEXT_WIDGET_HEIGHT)
+        for index, sort_by in enumerate(Config.SKETCHFAB_SORT_BY):
+            self.AddChild(id=CBOX_SORT_BY, subid=CBOX_SORT_BY_ELT + index, child=sort_by[1])
+        self.SetInt32(CBOX_SORT_BY, CBOX_SORT_BY_ELT + 2)
 
         self.GroupEnd()
-        return True
 
+    def refresh_filters_ui(self):
+        self.LayoutFlushGroup(GROUP_FILTERS)
+        self.draw_filters_ui()
+        self.LayoutChanged(GROUP_FILTERS)
 
     def result_valid(self):
         if not 'current' in self.skfb_api.search_results:
@@ -234,38 +288,40 @@ class SkfbPluginDialog(gui.GeDialog):
 
     def resultGroupWillRedraw(self):
         self.LayoutFlushGroup(GROUP_RESULTS)
-        self.create_results_ui()
+        self.draw_results_ui()
         self.LayoutChanged(GROUP_RESULTS)
 
-    def create_results_ui(self):
-        self.LayoutFlushGroup(GROUP_RESULTS)
-        self.GroupBegin(GROUP_RESULTS, c4d.BFH_SCALEFIT|c4d.BFH_SCALEFIT, 6, 4, "Bitmap Example",0) #id, flags, columns, rows, grouptext, groupflags
+    def draw_results_ui(self):
+        self.GroupBegin(GROUP_RESULTS, c4d.BFH_SCALEFIT|c4d.BFV_TOP, 6, 4, "Results",0) #id, flags, columns, rows, grouptext, groupflags
 
-        if not self.result_valid:
-            return
+        if hasattr(self, 'skfb_api'):
+            if not self.result_valid:
+                return
 
-        if not 'current' in self.skfb_api.search_results:
-            return
+            if not 'current' in self.skfb_api.search_results:
+                return
 
-        for index, skfb_model in enumerate(self.skfb_api.search_results['current'].values()):
-            image_container = c4d.BaseContainer() #Create a new container to store the image we will load for the button later on
-            self.GroupBegin(0, c4d.BFH_SCALEFIT|c4d.BFH_SCALEFIT, 1, 2, "Bitmap Example",0)
-            fn = c4d.storage.GeGetC4DPath(c4d.C4D_PATH_DESKTOP) #Gets the desktop path
-            filenameid = resultContainerIDStart + index
-            image_container.SetBool(c4d.BITMAPBUTTON_BUTTON, True)
-            # image_container.SetBool(c4d.BITMAPBUTTON_IGNORE_BITMAP_WIDTH, True)
-            # image_container.SetBool(c4d.BITMAPBUTTON_IGNORE_BITMAP_HEIGHT, True)
-            image_container.SetBool(c4d.BITMAPBUTTON_NOBORDERDRAW, True)
-            image_container.SetFilename(filenameid, str(skfb_model.thumbnail_path))
+            for index, skfb_model in enumerate(self.skfb_api.search_results['current'].values()):
+                image_container = c4d.BaseContainer() #Create a new container to store the image we will load for the button later on
+                self.GroupBegin(0, c4d.BFH_SCALEFIT|c4d.BFH_SCALEFIT, 1, 2, "Bitmap Example",0)
+                fn = c4d.storage.GeGetC4DPath(c4d.C4D_PATH_DESKTOP) #Gets the desktop path
+                filenameid = resultContainerIDStart + index
+                image_container.SetBool(c4d.BITMAPBUTTON_BUTTON, True)
+                image_container.SetBool(c4d.BITMAPBUTTON_NOBORDERDRAW, True)
+                image_container.SetFilename(filenameid, str(skfb_model.thumbnail_path))
 
-            self.mybutton = self.AddCustomGui(filenameid, c4d.CUSTOMGUI_BITMAPBUTTON, "Bitmap Button", c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 10, 10, image_container)
-            self.mybutton.SetLayoutMode(c4d.LAYOUTMODE_MINIMIZED)
-            self.mybutton.SetImage(str(skfb_model.thumbnail_path), False)
-            self.mybutton.SetToggleState(True)
+                self.mybutton = self.AddCustomGui(filenameid, c4d.CUSTOMGUI_BITMAPBUTTON, "Sketchfab model button", c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 10, 10, image_container)
+                self.mybutton.SetLayoutMode(c4d.LAYOUTMODE_MINIMIZED)
+                self.mybutton.SetImage(str(skfb_model.thumbnail_path), False)
+                self.mybutton.SetToggleState(True)
 
-            self.AddStaticText(id=3, flags=c4d.BFH_CENTER,
-                   initw=Config.UI_THUMBNAIL_RESOLUTION, inith=32, name=u'{}'.format(skfb_model.title))
-            self.GroupEnd()
+                nameid = resultNameIDStart + index
+                modelname = textwrap.wrap(skfb_model.title, 18)[0]  #[0:14] + '\n' + skfb_model.title[14:] if len(skfb_model.title) > 14 else skfb_model.title
+
+                self.AddStaticText(id=nameid, flags=c4d.BFV_BOTTOM | c4d.BFH_CENTER,
+                        initw=192, inith=16, name=u'{}'.format(modelname), borderstyle=c4d.BORDER_WITH_TITLE)
+
+                self.GroupEnd()
 
         self.GroupEnd()
         self.LayoutChanged(GROUP_RESULTS)
@@ -312,6 +368,16 @@ class SkfbPluginDialog(gui.GeDialog):
     def Command(self, id, msg):
         trigger_search = False
 
+        if id == BTN_CONNECT_SKETCHFAB:
+            self.skfb_api.logout()
+            self.refresh()
+            # self.skfb_api.connect_to_sketchfab()
+            # self.login_dialog = SkfbLoginDialog(self.skfb_api)
+            # self.login_dialog.Open(dlgtype=c4d.DLG_TYPE_MODAL_RESIZEABLE , defaultw=450, defaulth=300, xpos=-1, ypos=-1)
+
+        if id == BTN_LOGIN:
+            self.skfb_api.login(self.GetString(EDITXT_LOGIN_EMAIL), self.GetString(EDITXT_LOGIN_PASSWORD))
+
         bc = c4d.BaseContainer()
         if c4d.gui.GetInputState(c4d.BFM_INPUT_KEYBOARD, c4d.KEY_ENTER,bc):
             if bc[c4d.BFM_INPUT_VALUE] == 1:
@@ -322,27 +388,21 @@ class SkfbPluginDialog(gui.GeDialog):
             trigger_search = True
 
         if id == CBOX_CATEGORY:
-            print(self.GetInt32(CBOX_CATEGORY))
             trigger_search = True
 
         if id == CBOX_SORT_BY:
-            print(self.GetInt32(CBOX_SORT_BY))
             trigger_search = True
 
         if id == CBOX_FACE_COUNT:
-            print(self.GetInt32(CBOX_FACE_COUNT))
             trigger_search = True
 
         if id == CHK_IS_PBR:
-            print(self.GetBool(CHK_IS_PBR))
             trigger_search = True
 
         if id == CHK_IS_ANIMATED:
-            print(self.GetBool(CHK_IS_ANIMATED))
             trigger_search = True
 
         if id == CHK_IS_STAFFPICK:
-            print(self.GetBool(CHK_IS_STAFFPICK))
             trigger_search = True
 
         if trigger_search:
@@ -356,12 +416,44 @@ class SkfbPluginDialog(gui.GeDialog):
 
         return True
 
+class SkfbLoginDialog(gui.GeDialog):
+    def __init__(self, api):
+        self.skfb_api = api
+
+    def InitValues(self):
+        return True
+
+    def CreateLayout(self):
+        self.MenuFlushAll()
+        self.draw_login_input()
+        return True
+
+    def draw_login_input(self):
+        self.AddStaticText(id=TXT_EMAIL, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Email:")
+        self.AddEditText(id=EDITXT_LOGIN_EMAIL, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=350, inith=TEXT_WIDGET_HEIGHT)
+        self.AddStaticText(id=TXT_EMAIL, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Password:")
+        self.AddEditText(id=EDITXT_LOGIN_PASSWORD, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=350, inith=TEXT_WIDGET_HEIGHT, editflags=c4d.EDITTEXT_PASSWORD)
+        self.AddButton(id=BTN_LOGIN, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Login")
+
+
+    def Command(self, id, msg):
+        if id == BTN_LOGIN:
+            self.skfb_api.login(self.GetString(EDITXT_LOGIN_EMAIL), self.GetString(EDITXT_LOGIN_PASSWORD))
+
+        return True
 
 class SkfbModelDialog(gui.GeDialog):
 
     skfb_model = None
     PROGRESSBAR = 1001
     PROGRESS_GROUP = 1000
+    IMG_MODEL_THUMBNAIL = 1010
+    LB_MODEL_NAME = 1011
+    LB_MODEL_AUTHOR = 1012
+    LB_MODEL_LICENCE = 1013
+    LB_VERTEX_COUNT = 1014
+    LB_FACE_COUNT = 1015
+    LB_ANIMATION_COUNT = 1016
 
     def __init__(self):
         self.progress = 0
@@ -390,7 +482,7 @@ class SkfbModelDialog(gui.GeDialog):
             image_container.SetBool(c4d.BITMAPBUTTON_NOBORDERDRAW, True)
             image_container.SetFilename(resultContainerIDStart, self.skfb_model.thumbnail_path)
 
-            self.mybutton = self.AddCustomGui(BTN_VIEW_SKFB, c4d.CUSTOMGUI_BITMAPBUTTON, "Bitmap Button", c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 10, 10, image_container)
+            self.mybutton = self.AddCustomGui(BTN_VIEW_SKFB, c4d.CUSTOMGUI_BITMAPBUTTON, "Sketchfab thumbnail Button", c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 10, 10, image_container)
             self.mybutton.SetLayoutMode(c4d.LAYOUTMODE_MINIMIZED)
             self.mybutton.SetImage(str(self.skfb_model.preview_path), False)
             self.mybutton.SetToggleState(False)
@@ -424,7 +516,7 @@ class SkfbModelDialog(gui.GeDialog):
         if id == BTN_IMPORT:
             self.EnableStatusBar()
             if OVERRIDE_DOWNLOAD:
-                self.import_model(MODEL_PATH, self.skfb_model.uid)
+                self.skfb_api.import_model(MODEL_PATH, self.skfb_model.uid)
             else:
                 self.skfb_api.download_model(self.skfb_model.uid)
 
