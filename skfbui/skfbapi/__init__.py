@@ -332,6 +332,7 @@ class SketchfabApi:
         access_token = Cache.get_key('access_token')
         self.access_token = access_token
         self.build_headers()
+        self.request_user_info()
 
     def login(self, email, password):
         url = '{}&username={}&password={}'.format(Config.SKETCHFAB_OAUTH, urllib.quote(email), urllib.quote(password))
@@ -424,15 +425,15 @@ class SketchfabApi:
         uid = Utils.get_uid_from_model_url(r.url)
 
         # Dirty fix to avoid processing obsolete result data
-        if 'current' not in skfb.search_results or uid not in skfb.search_results['current']:
+        if 'current' not in self.search_results or uid not in self.search_results['current']:
             return
 
-        model = skfb.search_results['current'][uid]
+        model = self.search_results['current'][uid]
         json_data = r.json()
         model.license = json_data['license']['fullName']
         anim_count = int(json_data['animationCount'])
         model.animated = 'Yes ({} animation(s))'.format(anim_count) if anim_count > 0 else 'No'
-        skfb.search_results['current'][uid] = model
+        self.search_results['current'][uid] = model
 
     def search(self, url):
         threaded = ThreadedSearch(self, url)
