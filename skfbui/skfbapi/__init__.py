@@ -110,7 +110,7 @@ class Config:
 
     MAX_THUMBNAIL_HEIGHT = 512
     UI_THUMBNAIL_RESOLUTION = 128
-    MODEL_PLACEHOLDER_PATH = 'D:\\Softwares\\MAXON\\plugins\\ImportGLTF\\res\\model_placeholder.png'
+    MODEL_PLACEHOLDER_PATH = 'D:\\Softwares\\MAXON\\Cinema4DR20\\plugins\\ImportGLTF\\res\\modelPlaceholder.png'
 
 class Utils:
 
@@ -270,6 +270,7 @@ class SketchfabApi:
         self.login_callback = None
         self.import_callback = None
         self.request_callback = None
+        self.check_user_logged()
 
     def parse_plugin_version(self, request, *args, **kwargs):
         response = request.json()
@@ -384,7 +385,7 @@ class SketchfabApi:
 
     def get_user_info(self):
         if self.display_name and self.plan_type:
-            return '{} ({})'.format(self.display_name, self.plan_type)
+            return 'as {} ({})'.format(self.display_name, self.plan_type)
         else:
             return ''
 
@@ -440,6 +441,12 @@ class SketchfabApi:
         threaded.Start()
         self.threads.append(threaded)
         self.clear_threads()
+
+    def has_next(self):
+        return self.next_results_url is not None
+
+    def has_prev(self):
+        return self.prev_results_url is not None
 
     def search_next(self):
         self.search(self.next_results_url)
@@ -615,15 +622,10 @@ class ThreadedSearch(C4DThread):
             del self.skfb_api.search_results['current']
 
         self.skfb_api.search_results['current'] = OrderedDict()
-
+        print(len(json_data['results']))
         for result in list(json_data['results']):
             model = SketchfabModel(result)
             self.skfb_api.search_results['current'][model.uid] = model
-            if not Utils.thumbnail_file_exists(model.uid):
-                self.skfb_api.request_thumbnail(result['thumbnails'], self.handle_thumbnail)
-            else:
-                model.preview_path =  Utils.build_thumbnail_path(model.uid)
-                model.thumbnail_path = Utils.build_thumbnail_path(model.uid, is_thumbnail=True)
 
         if json_data['next']:
             self.skfb_api.next_results_url = json_data['next']
@@ -635,8 +637,18 @@ class ThreadedSearch(C4DThread):
         else:
             self.skfb_api.prev_results_url = None
 
+        # Request models thumbnails
+        for result in list(json_data['results']):
+            model = self.skfb_api.search_results['current'][result['uid']]
+            if not Utils.thumbnail_file_exists(model.uid):
+                self.skfb_api.request_thumbnail(result['thumbnails'], self.handle_thumbnail)
+            else:
+                model.preview_path =  Utils.build_thumbnail_path(model.uid)
+                model.thumbnail_path = Utils.build_thumbnail_path(model.uid, is_thumbnail=True)
+
         if self.skfb_api.request_callback:
             self.skfb_api.request_callback()
+
 
     def handle_thumbnail(self, r, *args, **kwargs):
         def get_resize_resolution(im):

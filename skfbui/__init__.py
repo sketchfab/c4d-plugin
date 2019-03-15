@@ -27,17 +27,20 @@ GROUP_FILTERS = 50004
 GROUP_FIVE = 50005
 GROUP_RESULTS = 50006
 GROUP_LOGIN_CONNECTED = 50007
+GROUP_PREVNEXT = 50008
 
-BTN_SEARCH = 10001
-BTN_VIEW_SKFB = 10002
-BTN_IMPORT = 10003
-BTN_NEXT_PAGE = 10004
-BTN_PREV_PAGE = 10005
-BTN_LOGIN = 10006
+BTN_SEARCH = 10000
+BTN_VIEW_SKFB = 10001
+BTN_IMPORT = 10002
+BTN_NEXT_PAGE = 10003
+BTN_PREV_PAGE = 10004
+BTN_LOGIN = 10005
+BTN_NEXT_PAGE = 10006
+BTN_PREV_PAGE = 10007
 BTN_CONNECT_SKETCHFAB = 10080
 
-EDITXT_LOGIN_EMAIL = 10007
-EDITXT_LOGIN_PASSWORD = 10008
+EDITXT_LOGIN_EMAIL = 10008
+EDITXT_LOGIN_PASSWORD = 10009
 
 LB_SEARCH_QUERY = 100010
 EDITXT_SEARCH_QUERY = 100011
@@ -70,10 +73,10 @@ resultContainerIDStart = 100061 # + 24 since 24 results on page
 resultNameIDStart = 100086
 
 
-OVERRIDE_DOWNLOAD = False
-MODEL_PATH = 'D:\\Softwares\\MAXON\\plugins\\ImportGLTF\\samples\\Camera\\scene.gltf'
-HEADER_PATH = 'D:\\Softwares\\MAXON\\plugins\\ImportGLTF\\res\\SketchfabHeader.png'
-TEXT_WIDGET_HEIGHT=10
+OVERRIDE_DOWNLOAD = True
+MODEL_PATH = 'D:\\Sketchfab\\repos\\samples\\'
+HEADER_PATH = 'D:\\Softwares\\MAXON\\Cinema4DR20\\plugins\\ImportGLTF\\res\\header.png'
+TEXT_WIDGET_HEIGHT = 10
 
 import c4d
 from c4d import gui
@@ -105,8 +108,7 @@ class UserAreaPathsHeader(gui.GeUserArea):
 
     def Redraw(self):
         thisFile = os.path.abspath(__file__)
-        thisDirectory = os.path.dirname(thisFile)
-        path = os.path.join(thisDirectory, "res", "header.png")
+        path = HEADER_PATH
         result, ismovie = self.bmp.InitWith(path)
         x1 = 0
         y1 = 0
@@ -136,7 +138,9 @@ class SkfbPluginDialog(gui.GeDialog):
     status_widget = None
 
     def InitValues(self):
-        self.SetTimer(50)
+        self.SetTimer(20)
+
+        self.SetString(EDITXT_LOGIN_EMAIL, "aurelien+test@sketchfab.com")
         #DEBGUG
         imp.reload(start)
         imp.reload(skfbapi)
@@ -173,7 +177,6 @@ class SkfbPluginDialog(gui.GeDialog):
     def Timer(self, msg):
         if self.redraw_results:
             self.resultGroupWillRedraw()
-            self.redraw_results = False
 
         if self.redraw_login:
             self.draw_login_ui()
@@ -290,11 +293,7 @@ class SkfbPluginDialog(gui.GeDialog):
     def resultGroupWillRedraw(self):
         self.LayoutFlushGroup(GROUP_RESULTS)
         self.draw_results_ui()
-        self.LayoutChanged(GROUP_RESULTS)
-
     def draw_results_ui(self):
-        self.GroupBegin(GROUP_RESULTS, c4d.BFH_SCALEFIT|c4d.BFV_TOP, 6, 4, "Results",0) #id, flags, columns, rows, grouptext, groupflags
-
         if hasattr(self, 'skfb_api'):
             if not self.result_valid:
                 return
@@ -302,6 +301,7 @@ class SkfbPluginDialog(gui.GeDialog):
             if not 'current' in self.skfb_api.search_results:
                 return
 
+            self.GroupBegin(GROUP_RESULTS, c4d.BFH_SCALEFIT|c4d.BFV_TOP, 6, 4, "Results",0) #id, flags, columns, rows, grouptext, groupflags
             for index, skfb_model in enumerate(self.skfb_api.search_results['current'].values()):
                 image_container = c4d.BaseContainer() #Create a new container to store the image we will load for the button later on
                 self.GroupBegin(0, c4d.BFH_SCALEFIT|c4d.BFH_SCALEFIT, 1, 2, "Bitmap Example",0)
@@ -317,15 +317,27 @@ class SkfbPluginDialog(gui.GeDialog):
                 self.mybutton.SetToggleState(True)
 
                 nameid = resultNameIDStart + index
-                modelname = textwrap.wrap(skfb_model.title, 18)[0]  #[0:14] + '\n' + skfb_model.title[14:] if len(skfb_model.title) > 14 else skfb_model.title
+                modelname = textwrap.wrap(skfb_model.title, 18)[0]  # dumbly truncate names for the UI
 
                 self.AddStaticText(id=nameid, flags=c4d.BFV_BOTTOM | c4d.BFH_CENTER,
                         initw=192, inith=16, name=u'{}'.format(modelname), borderstyle=c4d.BORDER_WITH_TITLE)
 
                 self.GroupEnd()
 
-        self.GroupEnd()
-        self.LayoutChanged(GROUP_RESULTS)
+            self.GroupEnd()
+            if len(self.skfb_api.search_results['current']) > 0:
+                self.LayoutFlushGroup(GROUP_PREVNEXT)
+                self.GroupBegin(GROUP_PREVNEXT, c4d.BFH_CENTER, 3, 1, "Prevnext",3) #id, flags, columns, rows, grouptext, groupflags
+                self.AddButton(id=BTN_PREV_PAGE, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Previous")
+                self.AddSeparatorH(inith=250, flags=c4d.BFH_FIT)
+                self.AddButton(id=BTN_NEXT_PAGE, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Next")
+                self.GroupEnd()
+
+            self.LayoutChanged(GROUP_RESULTS)
+            self.Enable(BTN_PREV_PAGE, self.skfb_api.has_prev())
+            self.Enable(BTN_NEXT_PAGE, self.skfb_api.has_next())
+            self.LayoutChanged(GROUP_PREVNEXT)
+            self.redraw_results = False
 
     def trigger_default_search(self):
         self.skfb_api.search(Config.DEFAULT_SEARCH)
@@ -333,7 +345,7 @@ class SkfbPluginDialog(gui.GeDialog):
     def trigger_search(self):
         final_query = Config.BASE_SEARCH
 
-        if self.GetString(EDITXT_SEARCH_QUERY):
+        if self.GetString(EDITXT_SEARCH_QUERY) and not OVERRIDE_DOWNLOAD:
             final_query = final_query + '&q={}'.format(self.GetString(EDITXT_SEARCH_QUERY))
 
         if self.GetBool(CHK_IS_ANIMATED):
@@ -378,6 +390,12 @@ class SkfbPluginDialog(gui.GeDialog):
         if id == BTN_LOGIN:
             self.skfb_api.login(self.GetString(EDITXT_LOGIN_EMAIL), self.GetString(EDITXT_LOGIN_PASSWORD))
 
+        if id == BTN_PREV_PAGE:
+            self.skfb_api.search_prev()
+
+        if id == BTN_NEXT_PAGE:
+            self.skfb_api.search_next()
+
         bc = c4d.BaseContainer()
         if c4d.gui.GetInputState(c4d.BFM_INPUT_KEYBOARD, c4d.KEY_ENTER,bc):
             if bc[c4d.BFM_INPUT_VALUE] == 1:
@@ -413,7 +431,7 @@ class SkfbPluginDialog(gui.GeDialog):
                 self.skfb_api.request_model_info(self.skfb_api.search_results['current'].values()[i].uid)
                 self.model_dialog = SkfbModelDialog()
                 self.model_dialog.SetModelInfo(self.skfb_api.search_results['current'].values()[i], self.skfb_api)
-                self.model_dialog.Open(dlgtype=c4d.DLG_TYPE_MODAL_RESIZEABLE , defaultw=450, defaulth=300, xpos=-1, ypos=-1)
+                self.model_dialog.Open(dlgtype=c4d.DLG_TYPE_ASYNC , defaultw=450, defaulth=300, xpos=-1, ypos=-1)
 
         return True
 
@@ -477,7 +495,7 @@ class SkfbModelDialog(gui.GeDialog):
             initw=500, name=u'Title:         {}'.format(self.skfb_model.title))
         self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
         self.AddStaticText(id=self.LB_VERTEX_COUNT, flags=c4d.BFH_RIGHT,
-            initw=500, name=u'Vertex Count:    {}'.format(Utils.humanify_number(self.skfb_model.vertex_count)))
+            initw=500, name=u'          Vertex Count:    {}'.format(Utils.humanify_number(self.skfb_model.vertex_count)))
         self.GroupEnd()
 
         self.GroupBegin(self.GRP_MODEL_INFO_2, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 1, "Results",0) #id, flags, columns, rows, grouptext, groupflags
@@ -485,7 +503,7 @@ class SkfbModelDialog(gui.GeDialog):
             initw=500, name=u'Author:    {}'.format(self.skfb_model.author))
         self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
         self.AddStaticText(id=self.LB_FACE_COUNT, flags=c4d.BFH_RIGHT,
-            initw=500, name=u'Face Count:       {}'.format(Utils.humanify_number(self.skfb_model.face_count)))
+            initw=500, name=u'          Face Count:       {}'.format(Utils.humanify_number(self.skfb_model.face_count)))
         self.GroupEnd()
 
         self.GroupBegin(self.GRP_MODEL_INFO_3, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 1, "Results",0) #id, flags, columns, rows, grouptext, groupflags
@@ -493,16 +511,17 @@ class SkfbModelDialog(gui.GeDialog):
             initw=500, name=u'License:    {}'.format(self.skfb_model.license))
         self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
         self.AddStaticText(id=self.LB_ANIMATION_COUNT, flags=c4d.BFH_RIGHT,
-            initw=500, name=u'Animated:          {}'.format(self.skfb_model.animated))
+            initw=500, name=u'          Animated:          {}'.format(self.skfb_model.animated))
         self.GroupEnd()
 
-        self.AddButton(id=BTN_IMPORT, flags=c4d.BFH_CENTER | c4d.BFV_BOTTOM, initw=128, inith=32, name="Import")
+        self.AddEditText(id=EDITXT_SEARCH_QUERY, flags=c4d.BFH_LEFT| c4d.BFV_CENTER, initw=500, inith=TEXT_WIDGET_HEIGHT)
 
-        self.GroupBegin(id=self.PROGRESS_GROUP, flags=c4d.BFH_LEFT|c4d.BFV_TOP, cols=0, rows=1)
-        self.AddStaticText(id=3, flags=c4d.BFH_LEFT, initw=60, name=u'{}'.format(self.step))
-        self.AddCustomGui(self.PROGRESSBAR, c4d.CUSTOMGUI_PROGRESSBAR, "", c4d.BFH_SCALEFIT|c4d.BFV_SCALEFIT, 0, 0)
+        self.GroupBegin(id=self.PROGRESS_GROUP, flags=c4d.BFH_CENTER|c4d.BFV_CENTER, cols=1, rows=3)
+        self.AddStaticText(id=3, flags=c4d.BFH_LEFT, initw=60, inith=0, name=u'{}'.format(self.step))
+        self.AddButton(id=BTN_IMPORT, flags=c4d.BFH_CENTER | c4d.BFV_CENTER, initw=200, inith=38, name="IMPORT MODEL")
+        #self.AddStaticText(id=3, flags=c4d.BFH_LEFT, initw=60, inith=30, name=u'{}'.format(self.step))
+        self.AddCustomGui(self.PROGRESSBAR, c4d.CUSTOMGUI_PROGRESSBAR, "", c4d.BFH_SCALEFIT, 0, 0)
         self.GroupEnd()
-
 
         return True
 
@@ -514,7 +533,13 @@ class SkfbModelDialog(gui.GeDialog):
         if id == BTN_IMPORT:
             self.EnableStatusBar()
             if OVERRIDE_DOWNLOAD:
-                self.skfb_api.import_model(MODEL_PATH, self.skfb_model.uid)
+                query = self.GetString(EDITXT_SEARCH_QUERY)
+                path = os.path.join(MODEL_PATH, query)
+                for file in os.listdir(path):
+                    if os.path.splitext(file)[-1] in ('.gltf', '.glb'):
+                        self.skfb_api.import_model(os.path.join(path, file), self.skfb_model.uid)
+                else:
+                    print('NOPATH')
             else:
                 self.skfb_api.download_model(self.skfb_model.uid)
 

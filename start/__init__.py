@@ -88,6 +88,10 @@ class ImportGLTF(plugins.ObjectData):
 
         # Add root objects to document
         for node in gltf.data.scenes[0].nodes:
+            rot = nodes[node].GetRelRot()
+            rot[1] += math.radians(180)
+            nodes[node].SetRelRot(rot)
+            nodes[node].SetRelScale([10.0, 10.0, 10.0])
             current_document.InsertObject(nodes[node])
 
         self.progress_callback('FINISHED', 1, 1)
@@ -130,7 +134,7 @@ class ImportGLTF(plugins.ObjectData):
         verts = []
         for i in range(len(vertex)):
             vect = c4d.Vector(vertex[i][0], vertex[i][1], vertex[i][2])
-            verts.append(vect)
+            verts.append(self.switch_handedness_v3(vect))
 
         indices = BinaryData.get_data_from_accessor(gltf, prim.indices)
 
@@ -183,6 +187,22 @@ class ImportGLTF(plugins.ObjectData):
 
         #         c4d_mesh.InsertTag(tangentTag)
 
+        # VERTEX COLORS
+        colors = []
+        colortag = None
+        if 'COLOR_0' in prim.attributes:
+            colors = BinaryData.get_data_from_accessor(gltf, prim.attributes['COLOR_0'])
+            if colors:
+                nb_verts = len(verts)
+                colortag = c4d.VertexColorTag(nb_verts)
+                colortag.SetPerPointMode(True)
+                colortag.SetName('GLTFVertexColor')
+                vtx_color_data = colortag.GetDataAddressW()
+                for i in range(nb_verts):
+                    c4d.VertexColorTag.SetPoint(vtx_color_data, None, None, i, c4d.Vector4d(colors[i][0], colors[i][1], colors[i][2], colors[i][3]))
+
+            c4d_mesh.InsertTag(colortag)
+
         if 'TEXCOORD_0' in prim.attributes:
             uvs = BinaryData.get_data_from_accessor(gltf, prim.attributes['TEXCOORD_0'])
 
@@ -199,6 +219,13 @@ class ImportGLTF(plugins.ObjectData):
             c4d_mesh.InsertTag(uvtag)
 
         mat = materials[prim.material]
+        if colortag:
+            # Set material to use Vertex colors
+            self.enable_vertex_colors_material(mat, colortag)
+
+        if not gltf.data.materials[prim.material].double_sided:
+            mat.SetParameter(c4d.TEXTURETAG_SIDE,c4d.SIDE_FRONT ,c4d.DESCFLAGS_SET_NONE)
+
         mattag = c4d.TextureTag()
         mattag.SetParameter(c4d.TEXTURETAG_MATERIAL, mat, c4d.DESCFLAGS_SET_NONE)
         mattag.SetParameter(c4d.TEXTURETAG_PROJECTION, c4d.TEXTURETAG_PROJECTION_UVW, c4d.DESCFLAGS_GET_NONE)
@@ -223,6 +250,9 @@ class ImportGLTF(plugins.ObjectData):
         self.setGradient(colorizer, self.COLOR_WHITE, self.COLOR_BLACK)
 
     def make_specular_diffuse(self, spec_gloss, mat):
+        if not 'diffuseTexture' in spec_gloss:
+            return
+
         diffusetexshader = self.gltf_textures[spec_gloss['diffuseTexture']['index']].to_c4d_shader()
         mat.SetParameter(c4d.MATERIAL_COLOR_SHADER, diffusetexshader, c4d.DESCFLAGS_SET_NONE)
         mat.InsertShader(diffusetexshader)
@@ -270,10 +300,19 @@ class ImportGLTF(plugins.ObjectData):
 
         return sha
 
-    def do_update(mat):
+    def do_update(self, mat):
         mat.Message(c4d.MSG_UPDATE)
         mat.Update(True, True)
         c4d.EventAdd()
+
+    def enable_vertex_colors_material(self, mat, colortag):
+        # multi: 1019397
+        # single: 1011137
+        mat[c4d.MATERIAL_USE_COLOR] = True
+        vtxcolorshader = c4d.BaseShader(1011137)
+        vtxcolorshader.SetParameter(c4d.SLA_DIRTY_VMAP_OBJECT, colortag, c4d.DESCFLAGS_GET_NONE)
+        mat.SetParameter(c4d.MATERIAL_COLOR_SHADER, vtxcolorshader, c4d.DESCFLAGS_SET_NONE)
+        mat.InsertShader(vtxcolorshader)
 
     def make_specular_layer(self, spec_gloss, mat):
         reflect = mat.AddReflectionLayer()
@@ -401,13 +440,16 @@ class ImportGLTF(plugins.ObjectData):
 
     def set_alpha(self, material, mat):
         if material.alpha_mode not in ('BLEND', 'MASK'):
+            mat[c4d.MATERIAL_USE_ALPHA] = 0
+            return
+        else:
             mat[c4d.MATERIAL_USE_ALPHA] = 1
             alpha_factor = 1.0
             diffuse_alpha_shader = None
 
         if material.extensions and 'KHR_materials_pbrSpecularGlossiness' in material.extensions:
             pbr_specular = material.extensions['KHR_materials_pbrSpecularGlossiness']
-            alpha_factor = pbr_specular['diffuse_factor'][3] if 'diffuseFactor' in pbr_specular else 1.0
+            alpha_factor = pbr_specular['diffuse_factor'][3] if 'diffuse_factor' in pbr_specular else 1.0
             if 'diffuseTexture' in pbr_specular:
                 diffuse_alpha_shader = self.gltf_textures[pbr_specular['diffuseTexture']['index']].to_c4d_shader(alpha_only=True)
 
@@ -415,6 +457,7 @@ class ImportGLTF(plugins.ObjectData):
             pbr_metal = material.pbr_metallic_roughness
             if pbr_metal.base_color_texture:
                 diffuse_alpha_shader = self.gltf_textures[pbr_metal.base_color_texture.index].to_c4d_shader(alpha_only=True)
+            if pbr_metal.base_color_factor:
                 alpha_factor = pbr_metal.base_color_factor[3] if pbr_metal.base_color_factor else 1.0
 
         if material.alpha_mode == 'BLEND':
@@ -465,6 +508,19 @@ class ImportGLTF(plugins.ObjectData):
             emit_color = c4d.Vector(emit_factor[0], emit_factor[1], emit_factor[2])
             mat.SetParameter(c4d.MATERIAL_LUMINANCE_COLOR, emit_color, c4d.DESCFLAGS_SET_NONE)
 
+
+    def create_material(self, name):
+        mat = c4d.Material()
+        mat.SetName(name)
+        mat[c4d.MATERIAL_USE_ALPHA] = False
+        mat[c4d.MATERIAL_USE_COLOR] = False
+        mat[c4d.MATERIAL_USE_LUMINANCE] = False
+        mat[c4d.MATERIAL_USE_NORMAL] = False
+        mat[c4d.MATERIAL_USE_SPECULAR] = False
+        mat[c4d.MATERIAL_USE_TRANSPARENCY] = False
+
+        return mat
+
     def loadMaterials(self, gltf):
         ''' Might be replaced by imported c4d mat'''
         # Following tricks from https://forum.allegorithmic.com/index.php?topic=9757.0#msg85512
@@ -474,8 +530,7 @@ class ImportGLTF(plugins.ObjectData):
 
         imported_materials = {}
         for index, material in enumerate(materials):
-            mat = c4d.Material()
-            mat.SetName(material.name)
+            mat = self.create_material(material.name)
 
             if material.extensions and 'KHR_materials_pbrSpecularGlossiness' in material.extensions:
                 mat[c4d.MATERIAL_USE_COLOR] = 1
@@ -490,9 +545,10 @@ class ImportGLTF(plugins.ObjectData):
                 mat.RemoveReflectionAllLayers()
 
                 pbr_metal = material.pbr_metallic_roughness
-                self.make_diffuse_layer(pbr_metal, mat)
-                self.make_metallic_reflectance_layer(pbr_metal, mat)
-                self.make_dielectric_reflectance_layer(pbr_metal, mat)
+                if pbr_metal:
+                    self.make_diffuse_layer(pbr_metal, mat)
+                    self.make_metallic_reflectance_layer(pbr_metal, mat)
+                    self.make_dielectric_reflectance_layer(pbr_metal, mat)
 
             self.set_alpha(material, mat)
             self.set_normal_map(material, mat)
@@ -507,14 +563,20 @@ class ImportGLTF(plugins.ObjectData):
     def loadTextures(self, gltf):
         dest_textures_path = self.get_texture_path()
         self.gltf_textures = []
-        for texture in gltf.data.textures:
 
+        if gltf.data.textures is None:
+            return
+
+        for texture in gltf.data.textures:
             # 1. Copy texture to project directory
             image = gltf.data.images[texture.source]
             fullpath = os.path.join(self.sample_directory, image.uri).replace('/', '\\')
             if not os.path.exists(fullpath):
                 print('Texture not found')
                 return
+
+            if not os.path.exists(dest_textures_path):
+                os.mkdir(dest_textures_path)
 
             final_texture_path = os.path.join(dest_textures_path, '{}_{}'.format(texture.source, os.path.basename(fullpath)))
             if not os.path.exists(final_texture_path):
@@ -527,9 +589,40 @@ class ImportGLTF(plugins.ObjectData):
             self.gltf_textures.append(texture)  #TODO use list instead
             self.progress_callback("Texture", len(self.gltf_textures), len(gltf.data.images))
 
+    def switch_handedness_v3(self, v3):
+        v3[2] = -v3[2]
+        return v3
+
+    def switch_handedness_rot(self, quat):
+        quat[0] = -quat[0]
+        quat[1] = -quat[1]
+
+        return quat
+        # axis = quat.v
+        # angle = quat.w
+        # axis[2] = -axis[2]
+        # quat.SetAxis(axis, angle)
+
+        # return quat
+
+    def gtf_to_c4d_quat(self, quat):
+        qx, qy, qz, qw = quat
+        axis = [1.0, 0.0, 0.0]
+        angle = 2 * math.acos(qw)
+        if angle != 0 and qw * qw != 1:
+            axis[0] = qx / math.sqrt(1 - qw * qw)
+            axis[1] = qy / math.sqrt(1 - qw * qw)
+            axis[2] = qz / math.sqrt(1 - qw * qw)
+
+        c4d_quat = c4d.Quaternion()
+        c4d_quat.SetAxis(axis, angle)
+
+        return c4d_quat
+
     def convert_node(self, gltf, node_idx, materials=None):
         gltf_node = gltf.data.nodes[node_idx]
         c4d_object = None
+        print("CONVERTING {}".format(node_idx))
 
         if gltf_node.mesh is not None:
             c4d_object = self.convert_mesh(gltf, gltf_node.mesh, c4d_object, materials)
@@ -537,12 +630,34 @@ class ImportGLTF(plugins.ObjectData):
             c4d_object = c4d.BaseObject(c4d.Onull)
 
         c4d_object.SetName(gltf_node.name if gltf_node.name else "GLTFObject")
+        c4d_mat = c4d.Matrix()
+        if gltf_node.matrix:
+            mat = gltf_node.matrix
+            v1 = c4d.Vector(mat[0], mat[1], mat[2])
+            v2 = c4d.Vector(mat[4], mat[5], mat[6])
+            v3 = c4d.Vector(mat[8], mat[9], mat[10])
+            off = c4d.Vector(mat[12], mat[13], mat[14])
+            c4d_mat = c4d.Matrix(off, v1, v2, v3)
+        else:
+            if gltf_node.translation:
+                c4d_mat.off = c4d.Vector(gltf_node.translation[0], gltf_node.translation[1], gltf_node.translation[2])
+            if gltf_node.rotation:
+                c4d_quat = self.gtf_to_c4d_quat(gltf_node.rotation)
+                c4d_mat = c4d_mat * c4d_quat.GetMatrix()
+            if gltf_node.scale:
+                scale = gltf_node.scale
+                c4d_scalemat = c4d.Matrix()
+                c4d_scalemat.v1[0] = scale[0]
+                c4d_scalemat.v2[1] = scale[1]
+                c4d_scalemat.v2[2] = scale[2]
+                c4d_mat = c4d_mat * c4d_scalemat
 
-        if gltf_node.translation:
-            c4d_object.SetRelPos(gltf_node.translation)
-        if gltf_node.rotation:
-            c4d_object.SetRelRot(gltf_node.rotation)
-        if gltf_node.scale:
-            c4d_object.SetRelScale(gltf_node.scale)
+        c4d_object.SetMl(c4d_mat)
 
+        # Convert to left-handed
+        c4d_object.SetRelPos(self.switch_handedness_v3(c4d_object.GetRelPos()))
+        c4d_object.SetRelPos(self.switch_handedness_v3(c4d.Vector(0.0, 0.0, 0.0)))
+        c4d_object.SetRelRot(self.switch_handedness_rot(c4d_object.GetRelRot()))
+        c4d_object.SetRelScale(self.switch_handedness_v3(c4d_object.GetRelScale()))
+        print("CONVERTED {}".format(node_idx))
         return c4d_object
