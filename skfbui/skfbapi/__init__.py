@@ -51,9 +51,9 @@ class Config:
         return tempfile.mkdtemp()
 
     ADDON_NAME = 'io_sketchfab'
-    GITHUB_REPOSITORY_URL = 'https://github.com/sketchfab/glTF-Blender-IO'
+    GITHUB_REPOSITORY_URL = 'https://github.com/sketchfab/c4d-plugin'
     GITHUB_REPOSITORY_API_URL = 'https://api.github.com/repos/sketchfab/c4d-plugin'
-    SKETCHFAB_REPORT_URL = 'https://help.sketchfab.com/hc/en-us/requests/new?type=exporters&subject=Blender+Plugin'
+    SKETCHFAB_REPORT_URL = 'https://help.sketchfab.com/hc/en-us/requests/new?type=exporters&subject=Cinema4D+Plugin'
 
     SKETCHFAB_URL = 'https://sketchfab.com'
     DUMMY_CLIENTID = 'ns2PeO9blbAPsJIsowUZRV8PvxCvGhBtaPjSZckv'
@@ -225,6 +225,8 @@ class Cache:
         if key in cache_data:
             return cache_data[key]
 
+        return ''
+
     @staticmethod
     def save_key(key, value):
         cache_data = Cache.read()
@@ -313,7 +315,6 @@ class SketchfabApi:
         return None
 
     def handle_login(self, r, *args, **kwargs):
-        print(r.json())
         if r.status_code == 200 and 'access_token' in r.json():
             self.access_token = r.json()['access_token']
             # Cache.save_key('username', login_props.email)
@@ -344,7 +345,6 @@ class SketchfabApi:
 
     def is_user_logged(self):
         if self.access_token and self.headers:
-            print('{} {}'.format(self.display_name, self.plan_type))
             return True
 
         return False
@@ -384,13 +384,13 @@ class SketchfabApi:
         Cache.delete_key('key')
 
     def get_user_info(self):
+        print('TAMERe {} {}'.format(self.display_name, self.plan_type))
         if self.display_name and self.plan_type:
             return 'as {} ({})'.format(self.display_name, self.plan_type)
         else:
             return ''
 
     def parse_user_info(self, r, *args, **kargs):
-        print(r)
         if r.status_code == 200:
             user_data = r.json()
             self.display_name = user_data['displayName']
@@ -673,7 +673,6 @@ class ThreadedSearch(C4DThread):
             return (left, top, right, bottom)
 
         uid = Utils.get_uid_from_thumbnail_url(r.url)
-
         if uid not in self.skfb_api.search_results['current']:
             print("Not in results not found")
             return
