@@ -88,16 +88,12 @@ class ImportGLTF(plugins.ObjectData):
 
         # Add root objects to document
         for node in gltf.data.scenes[0].nodes:
-            rot = nodes[node].GetRelRot()
-            rot[1] += math.radians(180)
-            nodes[node].SetRelRot(rot)
             nodes[node].SetRelScale([10.0, 10.0, 10.0])
             current_document.InsertObject(nodes[node])
 
         self.progress_callback('FINISHED', 1, 1)
 
-    def convert_mesh(self, gltf, mesh_index, c4d_object, materials):
-
+    def convert_primitive(self, prim, gltf, materials):
         # Helper functions
         def set_normals(normal_tag, polygon, normal_a, normal_b, normal_c, normal_d):
             def float2bytes(f):
@@ -126,10 +122,6 @@ class ImportGLTF(plugins.ObjectData):
                     normal_buffer[normal_tag.GetDataSize() * polygon + v * vector_size + c * component_size + 0] = chr(low_byte)
                     normal_buffer[normal_tag.GetDataSize() * polygon + v * vector_size + c * component_size + 1] = chr(high_byte)
 
-        gltf_mesh = gltf.data.meshes[mesh_index]
-
-        # Import only first primitive for now
-        prim = gltf_mesh.primitives[0]
         vertex = BinaryData.get_data_from_accessor(gltf, prim.attributes['POSITION'])
         verts = []
         for i in range(len(vertex)):
@@ -218,10 +210,40 @@ class ImportGLTF(plugins.ObjectData):
 
             c4d_mesh.InsertTag(uvtag)
 
+        if 'TEXCOORD_1' in prim.attributes:
+            uvs = BinaryData.get_data_from_accessor(gltf, prim.attributes['TEXCOORD_1'])
+
+            if uvs:
+                nb_poly = len(indices)
+                uvtag = c4d.UVWTag(nb_poly)
+                for i in range(0, nb_poly):
+                    poly = c4d_mesh.GetPolygon(i)
+                    aa = (uvs[poly.a][0], uvs[poly.a][1], 0.0)
+                    bb = (uvs[poly.b][0], uvs[poly.b][1], 0.0)
+                    cc = (uvs[poly.c][0], uvs[poly.c][1], 0.0)
+                    uvtag.SetSlow(i, aa, bb, cc, (0.0, 0.0, 0.0))
+
+            c4d_mesh.InsertTag(uvtag)
+
+        if 'TEXCOORD_2' in prim.attributes:
+            uvs = BinaryData.get_data_from_accessor(gltf, prim.attributes['TEXCOORD_2'])
+
+            if uvs:
+                nb_poly = len(indices)
+                uvtag = c4d.UVWTag(nb_poly)
+                for i in range(0, nb_poly):
+                    poly = c4d_mesh.GetPolygon(i)
+                    aa = (uvs[poly.a][0], uvs[poly.a][1], 0.0)
+                    bb = (uvs[poly.b][0], uvs[poly.b][1], 0.0)
+                    cc = (uvs[poly.c][0], uvs[poly.c][1], 0.0)
+                    uvtag.SetSlow(i, aa, bb, cc, (0.0, 0.0, 0.0))
+
+            c4d_mesh.InsertTag(uvtag)
+
         mat = materials[prim.material]
-        if colortag:
-            # Set material to use Vertex colors
-            self.enable_vertex_colors_material(mat, colortag)
+        # if colortag:
+        #     # Set material to use Vertex colors
+        #     self.enable_vertex_colors_material(mat, colortag)
 
         if not gltf.data.materials[prim.material].double_sided:
             mat.SetParameter(c4d.TEXTURETAG_SIDE,c4d.SIDE_FRONT ,c4d.DESCFLAGS_SET_NONE)
@@ -231,7 +253,20 @@ class ImportGLTF(plugins.ObjectData):
         mattag.SetParameter(c4d.TEXTURETAG_PROJECTION, c4d.TEXTURETAG_PROJECTION_UVW, c4d.DESCFLAGS_GET_NONE)
         c4d_mesh.InsertTag(mattag)
 
+
         return c4d_mesh
+
+    def convert_mesh(self, gltf, mesh_index, c4d_object, materials):
+        gltf_mesh = gltf.data.meshes[mesh_index]
+        if len(gltf_mesh.primitives) == 1:
+            return self.convert_primitive(gltf_mesh.primitives[0], gltf, materials)
+
+        c4d_object = c4d.BaseObject(c4d.Onull)
+        for prim in gltf_mesh.primitives:
+            c4d_mesh = self.convert_primitive(prim, gltf, materials)
+            c4d_mesh.InsertUnder(c4d_object)
+
+        return c4d_object
 
     def get_texture_path(self):
         return os.path.join(os.path.split(doc.GetParameter(c4d.DOCUMENT_FILEPATH, c4d.DESCFLAGS_GET_NONE))[0], 'tex')
@@ -335,12 +370,12 @@ class ImportGLTF(plugins.ObjectData):
             gloss_colorizer.SetParameter(c4d.SLA_COLORIZER_INPUT, c4d.SLA_COLORIZER_INPUT_LUMINANCE, c4d.DESCFLAGS_SET_NONE)
             gloss_colorizer.SetParameter(c4d.SLA_COLORIZER_TEXTURE, glossinesstexshader, c4d.DESCFLAGS_SET_NONE)
             gloss_colorizer.InsertShader(glossinesstexshader)
-            self.setGradientBlackWhite(gloss_colorizer)
+            self.setGradientInvert(gloss_colorizer)
             mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_SHADER_ROUGHNESS, gloss_colorizer, c4d.DESCFLAGS_SET_NONE)
             mat.InsertShader(gloss_colorizer)
 
         if 'glossinessFactor' in spec_gloss:
-            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_VALUE_ROUGHNESS, 1.0 - spec_gloss['glossinessFactor'], c4d.DESCFLAGS_SET_NONE)
+            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_VALUE_ROUGHNESS, spec_gloss['glossinessFactor'], c4d.DESCFLAGS_SET_NONE)
 
     def make_metallic_reflectance_layer(self, pbr_metal, mat):
         reflect = mat.AddReflectionLayer()
@@ -594,9 +629,8 @@ class ImportGLTF(plugins.ObjectData):
         return v3
 
     def switch_handedness_rot(self, quat):
-        quat[0] = -quat[0]
         quat[1] = -quat[1]
-
+        quat[2] = -quat[2]
         return quat
         # axis = quat.v
         # angle = quat.w
@@ -605,7 +639,7 @@ class ImportGLTF(plugins.ObjectData):
 
         # return quat
 
-    def gtf_to_c4d_quat(self, quat):
+    def gltf_to_c4d_quat(self, quat):
         qx, qy, qz, qw = quat
         axis = [1.0, 0.0, 0.0]
         angle = 2 * math.acos(qw)
@@ -622,7 +656,6 @@ class ImportGLTF(plugins.ObjectData):
     def convert_node(self, gltf, node_idx, materials=None):
         gltf_node = gltf.data.nodes[node_idx]
         c4d_object = None
-        print("CONVERTING {}".format(node_idx))
 
         if gltf_node.mesh is not None:
             c4d_object = self.convert_mesh(gltf, gltf_node.mesh, c4d_object, materials)
@@ -630,19 +663,20 @@ class ImportGLTF(plugins.ObjectData):
             c4d_object = c4d.BaseObject(c4d.Onull)
 
         c4d_object.SetName(gltf_node.name if gltf_node.name else "GLTFObject")
+        c4d_object.SetRotationOrder(c4d.ROTATIONORDER_XYZLOCAL)
         c4d_mat = c4d.Matrix()
         if gltf_node.matrix:
             mat = gltf_node.matrix
             v1 = c4d.Vector(mat[0], mat[1], mat[2])
-            v2 = c4d.Vector(mat[4], mat[5], mat[6])
-            v3 = c4d.Vector(mat[8], mat[9], mat[10])
+            v2 = c4d.Vector(mat[4], mat[5], -mat[6])
+            v3 = c4d.Vector(mat[8], -mat[9], mat[10])
             off = c4d.Vector(mat[12], mat[13], mat[14])
             c4d_mat = c4d.Matrix(off, v1, v2, v3)
         else:
             if gltf_node.translation:
                 c4d_mat.off = c4d.Vector(gltf_node.translation[0], gltf_node.translation[1], gltf_node.translation[2])
             if gltf_node.rotation:
-                c4d_quat = self.gtf_to_c4d_quat(gltf_node.rotation)
+                c4d_quat = self.gltf_to_c4d_quat(gltf_node.rotation)
                 c4d_mat = c4d_mat * c4d_quat.GetMatrix()
             if gltf_node.scale:
                 scale = gltf_node.scale
@@ -656,8 +690,6 @@ class ImportGLTF(plugins.ObjectData):
 
         # Convert to left-handed
         c4d_object.SetRelPos(self.switch_handedness_v3(c4d_object.GetRelPos()))
-        c4d_object.SetRelPos(self.switch_handedness_v3(c4d.Vector(0.0, 0.0, 0.0)))
         c4d_object.SetRelRot(self.switch_handedness_rot(c4d_object.GetRelRot()))
-        c4d_object.SetRelScale(self.switch_handedness_v3(c4d_object.GetRelScale()))
-        print("CONVERTED {}".format(node_idx))
+        # c4d_object.SetRelScale(self.switch_handedness_v3(c4d_object.GetRelScale()))
         return c4d_object
