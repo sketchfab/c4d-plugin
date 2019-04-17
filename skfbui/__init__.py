@@ -25,9 +25,11 @@ GROUP_SEARCH = 50002
 GROUP_QUERY = 50003
 GROUP_FILTERS = 50004
 GROUP_FIVE = 50005
-GROUP_RESULTS = 50006
-GROUP_LOGIN_CONNECTED = 50007
-GROUP_PREVNEXT = 50008
+GROUP_RESULTS_SCROLL = 50006
+GROUP_RESULTS = 50007
+GROUP_LOGIN_CONNECTED = 50008
+GROUP_PREVNEXT = 50009
+GROUP_UPGRADE_PRO = 50010
 
 BTN_SEARCH = 10000
 BTN_VIEW_SKFB = 10001
@@ -38,6 +40,8 @@ BTN_LOGIN = 10005
 BTN_NEXT_PAGE = 10006
 BTN_PREV_PAGE = 10007
 BTN_CONNECT_SKETCHFAB = 10080
+BTN_UPGRADE_PRO = 10081
+LB_UPGRADE_PRO = 10082
 
 EDITXT_LOGIN_EMAIL = 10008
 EDITXT_LOGIN_PASSWORD = 10009
@@ -162,11 +166,65 @@ class SkfbPluginDialog(gui.GeDialog):
         self.MenuFinished()
 
         self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+
+        self.GroupBegin(id=GROUP_LOGIN,
+                flags=c4d.BFH_RIGHT,
+                cols=5,
+                rows=1,
+                title="Login",
+                groupflags=c4d.BORDER_NONE)
+
         self.draw_login_ui()
+
+        self.GroupEnd()
+
         self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+
+        self.GroupBegin(id=GROUP_QUERY,
+                flags=c4d.BFH_LEFT | c4d.BFV_FIT,
+                cols=4,
+                rows=1,
+                title="Search",
+                groupflags=c4d.BORDER_NONE)
+
         self.draw_search_ui()
+
+        self.GroupEnd()
+
+        self.GroupBegin(id=GROUP_FILTERS,
+            flags=c4d.BFH_SCALEFIT | c4d.BFV_FIT,
+            cols=9,
+            rows=1,
+            title="Search",
+            groupflags=c4d.BORDER_NONE)
+
         self.draw_filters_ui()
+
+        self.GroupEnd()
+
         self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+
+        self.ScrollGroupBegin(GROUP_RESULTS_SCROLL, c4d.BFH_SCALEFIT|c4d.BFV_TOP, c4d.SCROLLGROUP_VERT|c4d.SCROLLGROUP_HORIZ| c4d.SCROLLGROUP_STATUSBAR|c4d.SCROLLGROUP_AUTOHORIZ|c4d.SCROLLGROUP_AUTOVERT, 800, 400)
+        self.GroupBegin(GROUP_RESULTS, c4d.BFH_SCALEFIT|c4d.BFV_TOP, 6, 4, "Results", c4d.BFV_GRIDGROUP_EQUALCOLS|c4d.BFV_GRIDGROUP_EQUALROWS) #id, flags, columns, rows, grouptext, groupflags
+
+        self.draw_results_ui()
+
+        self.GroupEnd()
+        self.GroupEnd()
+
+        self.GroupBegin(GROUP_UPGRADE_PRO, c4d.BFH_CENTER, 1, 2, "Upgrade")
+        self.GroupSpace(4, 4)
+        self.GroupBorderSpace(6, 6, 6, 6)
+
+        self.draw_upgrade_ui()
+
+        self.GroupEnd()
+
+        self.GroupBegin(GROUP_PREVNEXT, c4d.BFH_CENTER, 3, 1, "Prevnext") #id, flags, columns, rows, grouptext, groupflags
+
+        self.draw_prev_next()
+
+        self.GroupEnd()
 
         return True
 
@@ -191,21 +249,19 @@ class SkfbPluginDialog(gui.GeDialog):
         # Setup API
         self.skfb_api = SketchfabApi()
         self.skfb_api.request_callback = self.refresh
-        self.skfb_api.login_callback = self.draw_login_ui
+        self.skfb_api.login_callback = self.refresh_login_ui
+        self.skfb_api.msgbox_callback = self.msgbox_message
 
         return True
 
+    def msgbox_message(self, text):
+        c4d.gui.MessageDialog(text, type=c4d.GEMB_OK)
+
     def draw_login_ui(self):
         self.LayoutFlushGroup(GROUP_LOGIN)
-        self.GroupBegin(id=GROUP_LOGIN,
-                        flags=c4d.BFH_RIGHT,
-                        cols=5,
-                        rows=1,
-                        title="Login",
-                        groupflags=c4d.BORDER_NONE)
         # self.AddStaticText(id=TXT_CONNECT_STATUS, flags=c4d.BFH_LEFT, initw=0, inith=0, name='Connect to your user account')
         if hasattr(self, "skfb_api") and self.skfb_api.is_user_logged():
-            self.AddStaticText(id=TXT_EMAIL, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Connected as " + self.skfb_api.display_name)
+            self.AddStaticText(id=TXT_CONNECT_STATUS, flags=c4d.BFH_LEFT, initw=0, inith=0, name=pla)
             self.AddButton(id=BTN_CONNECT_SKETCHFAB, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Logout")
         else:
             self.AddStaticText(id=TXT_EMAIL, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Email:")
@@ -214,42 +270,28 @@ class SkfbPluginDialog(gui.GeDialog):
             self.AddEditText(id=EDITXT_LOGIN_PASSWORD, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=350, inith=TEXT_WIDGET_HEIGHT, editflags=c4d.EDITTEXT_PASSWORD)
             self.AddButton(id=BTN_LOGIN, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Login")
 
-        self.GroupEnd()
         self.LayoutChanged(GROUP_LOGIN)
 
     def refresh_login_ui(self):
-        self.LayoutFlushGroup(GROUP_LOGIN)
         self.draw_login_ui()
-        self.LayoutChanged(GROUP_LOGIN)
 
     def draw_search_ui(self):
-        self.GroupBegin(id=GROUP_QUERY,
-                        flags=c4d.BFH_LEFT | c4d.BFV_FIT,
-                        cols=4,
-                        rows=1,
-                        title="Search",
-                        groupflags=c4d.BORDER_NONE)
+        self.LayoutFlushGroup(GROUP_QUERY)
 
         mymodels_caption = 'My models ' + str('(PRO)' if not self.skfb_api.is_user_pro else '')
         self.AddStaticText(id=LB_SEARCH_QUERY, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=90, inith=TEXT_WIDGET_HEIGHT, name=" Search: ")
         self.AddEditText(id=EDITXT_SEARCH_QUERY, flags=c4d.BFH_LEFT| c4d.BFV_CENTER, initw=500, inith=TEXT_WIDGET_HEIGHT)
         self.AddButton(id=BTN_SEARCH, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Search")
         self.AddCheckbox(id=CHK_MY_MODELS, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=250, inith=TEXT_WIDGET_HEIGHT, name=mymodels_caption)
-        # self.Enable(CHK_MY_MODELS, self.skfb_api.is_user_pro)
-        self.GroupEnd()
+        self.Enable(CHK_MY_MODELS, int(self.skfb_api.is_user_logged()))
 
-    def refresh_search_ui(self):
-        self.LayoutFlushGroup(GROUP_QUERY)
-        self.draw_search_ui()
         self.LayoutChanged(GROUP_QUERY)
 
+    def refresh_search_ui(self):
+        self.draw_search_ui()
+
     def draw_filters_ui(self):
-        self.GroupBegin(id=GROUP_FILTERS,
-                flags=c4d.BFH_SCALEFIT | c4d.BFV_FIT,
-                cols=9,
-                rows=1,
-                title="Search",
-                groupflags=c4d.BORDER_NONE)
+        self.LayoutFlushGroup(GROUP_FILTERS)
 
         # Categories
         self.AddComboBox(id=CBOX_CATEGORY, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=250, inith=TEXT_WIDGET_HEIGHT)
@@ -277,12 +319,10 @@ class SkfbPluginDialog(gui.GeDialog):
             self.AddChild(id=CBOX_SORT_BY, subid=CBOX_SORT_BY_ELT + index, child=sort_by[1])
         self.SetInt32(CBOX_SORT_BY, CBOX_SORT_BY_ELT + 2)
 
-        self.GroupEnd()
+        self.LayoutChanged(GROUP_FILTERS)
 
     def refresh_filters_ui(self):
-        self.LayoutFlushGroup(GROUP_FILTERS)
         self.draw_filters_ui()
-        self.LayoutChanged(GROUP_FILTERS)
 
     def result_valid(self):
         if not 'current' in self.skfb_api.search_results:
@@ -291,8 +331,10 @@ class SkfbPluginDialog(gui.GeDialog):
         return True
 
     def resultGroupWillRedraw(self):
-        self.LayoutFlushGroup(GROUP_RESULTS)
         self.draw_results_ui()
+        self.draw_upgrade_ui()
+        self.draw_prev_next()
+
     def draw_results_ui(self):
         if hasattr(self, 'skfb_api'):
             if not self.result_valid:
@@ -301,7 +343,8 @@ class SkfbPluginDialog(gui.GeDialog):
             if not 'current' in self.skfb_api.search_results:
                 return
 
-            self.GroupBegin(GROUP_RESULTS, c4d.BFH_SCALEFIT|c4d.BFV_TOP, 6, 4, "Results",0) #id, flags, columns, rows, grouptext, groupflags
+            self.LayoutFlushGroup(GROUP_RESULTS)
+
             for index, skfb_model in enumerate(self.skfb_api.search_results['current'].values()):
                 image_container = c4d.BaseContainer() #Create a new container to store the image we will load for the button later on
                 self.GroupBegin(0, c4d.BFH_SCALEFIT|c4d.BFH_SCALEFIT, 1, 2, "Bitmap Example",0)
@@ -324,27 +367,42 @@ class SkfbPluginDialog(gui.GeDialog):
 
                 self.GroupEnd()
 
-            self.GroupEnd()
             self.LayoutChanged(GROUP_RESULTS)
-
-            if len(self.skfb_api.search_results['current']) > 0:
-                self.LayoutFlushGroup(GROUP_PREVNEXT)
-                self.GroupBegin(GROUP_PREVNEXT, c4d.BFH_CENTER, 3, 1, "Prevnext",3) #id, flags, columns, rows, grouptext, groupflags
-                self.AddButton(id=BTN_PREV_PAGE, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Previous")
-                self.AddSeparatorH(inith=250, flags=c4d.BFH_FIT)
-                self.AddButton(id=BTN_NEXT_PAGE, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Next")
-                self.GroupEnd()
 
             self.Enable(BTN_PREV_PAGE, self.skfb_api.has_prev())
             self.Enable(BTN_NEXT_PAGE, self.skfb_api.has_next())
-            self.LayoutChanged(GROUP_PREVNEXT)
+
             self.redraw_results = False
+
+    def draw_upgrade_ui(self):
+        self.LayoutFlushGroup(GROUP_UPGRADE_PRO)
+
+        if self.GetBool(CHK_MY_MODELS) and not self.skfb_api.is_user_pro:
+            self.AddStaticText(id=LB_UPGRADE_PRO, flags=c4d.BFH_CENTER,
+                initw=500, name=u'Gain full API access to your personal library of 3D models')
+            self.AddButton(id=BTN_UPGRADE_PRO, flags=c4d.BFH_CENTER | c4d.BFV_CENTER, initw=150, inith=TEXT_WIDGET_HEIGHT, name="Upgrade To Pro")
+
+        self.LayoutChanged(GROUP_UPGRADE_PRO)
+
+    def draw_prev_next(self):
+        self.LayoutFlushGroup(GROUP_PREVNEXT)
+
+        if len(self.skfb_api.search_results['current']) > 0:
+            self.AddButton(id=BTN_PREV_PAGE, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Previous")
+            self.AddSeparatorH(inith=250, flags=c4d.BFH_FIT)
+            self.AddButton(id=BTN_NEXT_PAGE, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Next")
+            self.GroupEnd()
+            self.Enable(BTN_PREV_PAGE, self.skfb_api.has_prev())
+            self.Enable(BTN_NEXT_PAGE, self.skfb_api.has_next())
+
+        self.LayoutChanged(GROUP_PREVNEXT)
+
 
     def trigger_default_search(self):
         self.skfb_api.search(Config.DEFAULT_SEARCH)
 
     def trigger_search(self):
-        final_query = Config.BASE_SEARCH
+        final_query = Config.SKETCHFAB_OWN_MODELS_SEARCH if self.GetBool(CHK_MY_MODELS) else Config.SKETCHFAB_SEARCH
 
         if self.GetString(EDITXT_SEARCH_QUERY) and not OVERRIDE_DOWNLOAD:
             final_query = final_query + '&q={}'.format(self.GetString(EDITXT_SEARCH_QUERY))
@@ -379,7 +437,16 @@ class SkfbPluginDialog(gui.GeDialog):
         if self.GetBool(CHK_IS_PBR):
             final_query = final_query + '&pbr_type=true'
 
+        print(final_query)
         self.skfb_api.search(final_query)
+
+    def reset_filters(self, is_own_model):
+        self.SetBool(CHK_IS_STAFFPICK, not is_own_model)
+        self.SetBool(CHK_IS_ANIMATED, False)
+        self.SetBool(CHK_IS_PBR, False)
+        self.SetInt32(CBOX_CATEGORY, CBOX_CATEGORY_ELT)
+        self.SetInt32(CBOX_FACE_COUNT, CBOX_FACE_COUNT_ELT)
+        self.SetInt32(CBOX_SORT_BY, CBOX_SORT_BY_ELT + 3)
 
     def Command(self, id, msg):
         trigger_search = False
@@ -424,11 +491,18 @@ class SkfbPluginDialog(gui.GeDialog):
         if id == CHK_IS_STAFFPICK:
             trigger_search = True
 
+        if id == CHK_MY_MODELS:
+            self.reset_filters(self.GetBool(CHK_MY_MODELS))
+            trigger_search = True
+
         if trigger_search:
             self.trigger_search()
 
         for i in range(24):
             if id == resultContainerIDStart + i:
+                if self.model_dialog:
+                    self.model_dialog.Close()
+
                 self.skfb_api.request_model_info(self.skfb_api.search_results['current'].values()[i].uid)
                 self.model_dialog = SkfbModelDialog()
                 self.model_dialog.SetModelInfo(self.skfb_api.search_results['current'].values()[i], self.skfb_api)
@@ -491,31 +565,23 @@ class SkfbModelDialog(gui.GeDialog):
             self.html.DoAction(c4d.WEBPAGE_REFRESH)
 
         # Model infos
-        self.GroupBegin(self.GRP_MODEL_INFO_1, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 1, "Results",0) #id, flags, columns, rows, grouptext, groupflags
-        self.AddStaticText(id=self.LB_MODEL_NAME, flags=c4d.BFH_LEFT,
-            initw=500, name=u'Title:         {}'.format(self.skfb_model.title))
-        self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
-        self.AddStaticText(id=self.LB_VERTEX_COUNT, flags=c4d.BFH_RIGHT,
-            initw=500, name=u'          Vertex Count:    {}'.format(Utils.humanify_number(self.skfb_model.vertex_count)))
+        # self.GroupBegin(self.GRP_MODEL_INFO_1, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 1, "Results",0) #id, flags, columns, rows, grouptext, groupflags
+        # self.draw_model_name()
+        # self.GroupEnd()
+
+        # self.GroupBegin(self.GRP_MODEL_INFO_2, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 1, "Results",0) #id, flags, columns, rows, grouptext, groupflags
+        # self.draw_model_author()
+        # self.GroupEnd()
+
+        # self.GroupBegin(self.GRP_MODEL_INFO_3, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 1, "Results",0) #id, flags, columns, rows, grouptext, groupflags
+        # self.draw_license_animation()
+        # self.GroupEnd()
+
+        self.GroupBegin(self.GRP_MODEL_INFO_1, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 3, "Results",0) #id, flags, columns, rows, grouptext, groupflags
+        self.draw_model_info()
         self.GroupEnd()
 
-        self.GroupBegin(self.GRP_MODEL_INFO_2, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 1, "Results",0) #id, flags, columns, rows, grouptext, groupflags
-        self.AddStaticText(id=self.LB_MODEL_AUTHOR, flags=c4d.BFH_LEFT,
-            initw=500, name=u'Author:    {}'.format(self.skfb_model.author))
-        self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
-        self.AddStaticText(id=self.LB_FACE_COUNT, flags=c4d.BFH_RIGHT,
-            initw=500, name=u'          Face Count:       {}'.format(Utils.humanify_number(self.skfb_model.face_count)))
-        self.GroupEnd()
-
-        self.GroupBegin(self.GRP_MODEL_INFO_3, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 1, "Results",0) #id, flags, columns, rows, grouptext, groupflags
-        self.AddStaticText(id=self.LB_MODEL_LICENCE, flags=c4d.BFH_LEFT,
-            initw=500, name=u'License:    {}'.format(self.skfb_model.license))
-        self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
-        self.AddStaticText(id=self.LB_ANIMATION_COUNT, flags=c4d.BFH_RIGHT,
-            initw=500, name=u'          Animated:          {}'.format(self.skfb_model.animated))
-        self.GroupEnd()
-
-        self.AddEditText(id=EDITXT_SEARCH_QUERY, flags=c4d.BFH_LEFT| c4d.BFV_CENTER, initw=500, inith=TEXT_WIDGET_HEIGHT)
+        #self.AddEditText(id=EDITXT_SEARCH_QUERY, flags=c4d.BFH_LEFT| c4d.BFV_CENTER, initw=500, inith=TEXT_WIDGET_HEIGHT)
 
         self.GroupBegin(id=self.PROGRESS_GROUP, flags=c4d.BFH_CENTER|c4d.BFV_CENTER, cols=1, rows=3)
         self.AddStaticText(id=3, flags=c4d.BFH_LEFT, initw=60, inith=0, name=u'{}'.format(self.step))
@@ -525,6 +591,29 @@ class SkfbModelDialog(gui.GeDialog):
         self.GroupEnd()
 
         return True
+
+    def draw_model_info(self):
+        self.LayoutFlushGroup(self.GRP_MODEL_INFO_1)
+
+        self.AddStaticText(id=self.LB_MODEL_NAME, flags=c4d.BFH_LEFT,
+            initw=500, name=u'Title:         {}'.format(self.skfb_model.title))
+        self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
+        self.AddStaticText(id=self.LB_VERTEX_COUNT, flags=c4d.BFH_RIGHT,
+            initw=500, name=u'          Vertex Count:    {}'.format(Utils.humanify_number(self.skfb_model.vertex_count)))
+
+        self.AddStaticText(id=self.LB_MODEL_AUTHOR, flags=c4d.BFH_LEFT,
+            initw=500, name=u'Author:    {}'.format(self.skfb_model.author))
+        self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
+        self.AddStaticText(id=self.LB_FACE_COUNT, flags=c4d.BFH_RIGHT,
+            initw=500, name=u'          Face Count:       {}'.format(Utils.humanify_number(self.skfb_model.face_count)))
+
+        self.AddStaticText(id=self.LB_MODEL_LICENCE, flags=c4d.BFH_LEFT,
+            initw=500, name=u'License:    {}'.format(self.skfb_model.license))
+        self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
+        self.AddStaticText(id=self.LB_ANIMATION_COUNT, flags=c4d.BFH_RIGHT,
+            initw=500, name=u'          Animated:          {}'.format(self.skfb_model.animated))
+
+        self.LayoutChanged(self.GRP_MODEL_INFO_1)
 
     def Command(self, id, msg):
         if id == BTN_VIEW_SKFB:

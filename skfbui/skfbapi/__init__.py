@@ -59,11 +59,11 @@ class Config:
     DUMMY_CLIENTID = 'ns2PeO9blbAPsJIsowUZRV8PvxCvGhBtaPjSZckv'
     SKETCHFAB_OAUTH = SKETCHFAB_URL + '/oauth2/token/?grant_type=password&client_id=' + DUMMY_CLIENTID
     SKETCHFAB_API = 'https://api.sketchfab.com'
-    SKETCHFAB_SEARCH = SKETCHFAB_API + '/v3/search'
+    SKETCHFAB_SEARCH = SKETCHFAB_API + '/v3/search?type=models&downloadable=true'
     SKETCHFAB_MODEL = SKETCHFAB_API + '/v3/models'
+    SKETCHFAB_OWN_MODELS_SEARCH = SKETCHFAB_API + '/v3/me/search?type=models&downloadable=true'
     SKETCHFAB_SIGNUP = 'https://sketchfab.com/signup'
 
-    BASE_SEARCH = SKETCHFAB_SEARCH + '?type=models&downloadable=true'
     DEFAULT_FLAGS = '&staffpicked=true&sort_by=-staffpickedAt'
     DEFAULT_SEARCH = SKETCHFAB_SEARCH + \
                      '?type=models&downloadable=true' + DEFAULT_FLAGS
@@ -272,6 +272,7 @@ class SketchfabApi:
         self.login_callback = None
         self.import_callback = None
         self.request_callback = None
+        self.msgbox_callback = None
         self.check_user_logged()
 
     def parse_plugin_version(self, request, *args, **kwargs):
@@ -325,7 +326,8 @@ class SketchfabApi:
             print("LOGGED")
 
         else:
-            print('Cannot login.\n {}'.format(r.json()))
+            print('Cannot login.\n{}'.format(r.json()))
+            self.msgbox_callback('Cannot login: {}'.format(r.json()['error_description']))
 
         self.is_logging = False
         self.request_callback()
@@ -384,7 +386,6 @@ class SketchfabApi:
         Cache.delete_key('key')
 
     def get_user_info(self):
-        print('TAMERe {} {}'.format(self.display_name, self.plan_type))
         if self.display_name and self.plan_type:
             return 'as {} ({})'.format(self.display_name, self.plan_type)
         else:
@@ -397,22 +398,12 @@ class SketchfabApi:
             self.plan_type = user_data['account']
             print(self.display_name)
             print(self.plan_type)
+            print(self.access_token)
             self.is_user_pro = self.plan_type != 'basic'
             self.login_callback()
         else:
             self.access_token = ''
             self.headers = {}
-
-    def parse_login(self, r, *args, **kwargs):
-        if r.status_code == 200 and 'access_token' in r.json():
-            self.access_token = r.json()['access_token']
-            self.build_headers()
-            self.request_user_info()
-        else:
-            if 'error_description' in r.json():
-                print("Failed to login: {}".format(r.json()['error_description']))
-            else:
-                print('Login failed.\n {}'.format(r.json()))
 
     def request_thumbnail(self, thumbnails_json, thumbnail_cb):
         url = Utils.get_thumbnail_url(thumbnails_json)
@@ -523,8 +514,7 @@ class ThreadedModelDownload(C4DThread):
 
     def handle_download(self, r, *args, **kwargs):
         if r.status_code != 200 or 'gltf' not in r.json():
-            print('Download not available for this model')
-            print(r.text)
+            self.msgbox_callback('Download not available for this model')
             return
 
         uid = Utils.get_uid_from_model_url(r.url)
@@ -548,9 +538,9 @@ class ThreadedModelDownload(C4DThread):
                     zip_ref.extractall(extract_dir)
                     zip_ref.close()
                 except zipfile.BadZipFile:
-                    print('Error when dezipping file')
+                    self.msgbox_callback('Error when dezipping file')
                     os.remove(archive_path)
-                    print('Invaild zip. Try again')
+                    self.msgbox_callback('Invaild zip. Try again')
                     return None, None
 
                 gltf_file = os.path.join(extract_dir, 'scene.gltf')
@@ -560,7 +550,6 @@ class ThreadedModelDownload(C4DThread):
                 print('ERROR: archive doesn\'t exist')
 
         if url is None:
-            print('Url is None')
             return
 
         r = requests.get(url, stream=True)
@@ -600,7 +589,6 @@ class ThreadedModelDownload(C4DThread):
                 import traceback
                 print(traceback.format_exc())
         else:
-            print("Failed to download model (url might be invalid)")
             model = self.get_sketchfab_model(uid)
             # set_import_status("Import model ({})".format(model.download_size if model.download_size else 'fetching data'))
 
@@ -612,7 +600,7 @@ class ThreadedSearch(C4DThread):
         self.url = url
 
     def Main(self):
-        requests.get(self.url, hooks={'response': self.parse_results})
+        requests.get(self.url, headers=self.skfb_api.headers, hooks={'response': self.parse_results})
 
     def parse_results(self, r, *args, **kwargs):
         json_data = r.json()
@@ -639,6 +627,9 @@ class ThreadedSearch(C4DThread):
 
         # Request models thumbnails
         for result in list(json_data['results']):
+            if not result['uid'] in self.skfb_api.search_results['current']:
+                continue
+
             model = self.skfb_api.search_results['current'][result['uid']]
             if not Utils.thumbnail_file_exists(model.uid):
                 self.skfb_api.request_thumbnail(result['thumbnails'], self.handle_thumbnail)
@@ -673,8 +664,7 @@ class ThreadedSearch(C4DThread):
             return (left, top, right, bottom)
 
         uid = Utils.get_uid_from_thumbnail_url(r.url)
-        if uid not in self.skfb_api.search_results['current']:
-            print("Not in results not found")
+        if not uid in self.skfb_api.search_results['current']:
             return
 
         if not os.path.exists(Config.SKETCHFAB_THUMB_DIR):
@@ -683,7 +673,6 @@ class ThreadedSearch(C4DThread):
         preview_path = Utils.build_thumbnail_path(uid)
 
         if os.path.exists(preview_path):
-            print("Thumbnail already here")
             return
 
         with open(preview_path, "wb") as f:
@@ -699,13 +688,11 @@ class ThreadedSearch(C4DThread):
                     f.write(data)
 
         if not os.path.exists(preview_path):
-            print("Thumbnail not found")
             return
 
         try:
             im = Image.open(preview_path)
         except IOError:
-            print("FAILED to import thumbnail")
             return
 
         # Resize for preview (model page)
@@ -718,6 +705,9 @@ class ThreadedSearch(C4DThread):
 
         thumbnail_path = Utils.build_thumbnail_path(uid, is_thumbnail=True)
         im.save(thumbnail_path, "JPEG")
+
+        if not uid in self.skfb_api.search_results['current']:
+            return
 
         self.skfb_api.search_results['current'][uid].preview_path = preview_path
         self.skfb_api.search_results['current'][uid].thumbnail_path = thumbnail_path
