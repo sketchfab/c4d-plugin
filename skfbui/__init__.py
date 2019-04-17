@@ -73,7 +73,7 @@ resultContainerIDStart = 100061 # + 24 since 24 results on page
 resultNameIDStart = 100086
 
 
-OVERRIDE_DOWNLOAD = True
+OVERRIDE_DOWNLOAD = False
 MODEL_PATH = 'D:\\Sketchfab\\repos\\samples\\'
 HEADER_PATH = 'D:\\Softwares\\MAXON\\Cinema4DR20\\plugins\\ImportGLTF\\res\\header.png'
 TEXT_WIDGET_HEIGHT = 10
@@ -235,7 +235,7 @@ class SkfbPluginDialog(gui.GeDialog):
         self.AddEditText(id=EDITXT_SEARCH_QUERY, flags=c4d.BFH_LEFT| c4d.BFV_CENTER, initw=500, inith=TEXT_WIDGET_HEIGHT)
         self.AddButton(id=BTN_SEARCH, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Search")
         self.AddCheckbox(id=CHK_MY_MODELS, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=250, inith=TEXT_WIDGET_HEIGHT, name=mymodels_caption)
-        self.Enable(CHK_MY_MODELS, self.skfb_api.is_user_pro)
+        # self.Enable(CHK_MY_MODELS, self.skfb_api.is_user_pro)
         self.GroupEnd()
 
     def refresh_search_ui(self):
@@ -325,6 +325,8 @@ class SkfbPluginDialog(gui.GeDialog):
                 self.GroupEnd()
 
             self.GroupEnd()
+            self.LayoutChanged(GROUP_RESULTS)
+
             if len(self.skfb_api.search_results['current']) > 0:
                 self.LayoutFlushGroup(GROUP_PREVNEXT)
                 self.GroupBegin(GROUP_PREVNEXT, c4d.BFH_CENTER, 3, 1, "Prevnext",3) #id, flags, columns, rows, grouptext, groupflags
@@ -333,7 +335,6 @@ class SkfbPluginDialog(gui.GeDialog):
                 self.AddButton(id=BTN_NEXT_PAGE, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Next")
                 self.GroupEnd()
 
-            self.LayoutChanged(GROUP_RESULTS)
             self.Enable(BTN_PREV_PAGE, self.skfb_api.has_prev())
             self.Enable(BTN_NEXT_PAGE, self.skfb_api.has_next())
             self.LayoutChanged(GROUP_PREVNEXT)
