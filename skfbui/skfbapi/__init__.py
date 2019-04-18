@@ -52,6 +52,7 @@ class Config:
 
     ADDON_NAME = 'io_sketchfab'
     GITHUB_REPOSITORY_URL = 'https://github.com/sketchfab/c4d-plugin'
+    PLUGIN_LATEST_RELEASE = 'https://github.com/sketchfab/c4d-plugin/releases/latest'
     GITHUB_REPOSITORY_API_URL = 'https://api.github.com/repos/sketchfab/c4d-plugin'
     SKETCHFAB_REPORT_URL = 'https://help.sketchfab.com/hc/en-us/requests/new?type=exporters&subject=Cinema4D+Plugin'
 
@@ -63,8 +64,9 @@ class Config:
     SKETCHFAB_MODEL = SKETCHFAB_API + '/v3/models'
     SKETCHFAB_OWN_MODELS_SEARCH = SKETCHFAB_API + '/v3/me/search?type=models&downloadable=true'
     SKETCHFAB_SIGNUP = 'https://sketchfab.com/signup'
+    SKETCHFAB_PLANS = 'https://sketchfab.com/plans?utm_source=c4d-plugin&utm_medium=plugin&utm_campaign=download-api-pro-cta'
 
-    DEFAULT_FLAGS = '&staffpicked=true&sort_by=-staffpickedAt'
+    DEFAULT_FLAGS = '&staffpicked=true&sort_by=-publishedAt'
     DEFAULT_SEARCH = SKETCHFAB_SEARCH + \
                      '?type=models&downloadable=true' + DEFAULT_FLAGS
 
@@ -109,6 +111,7 @@ class Config:
                          ('RECENT', "Recent", ""))
 
     MAX_THUMBNAIL_HEIGHT = 512
+    UI_PREVIEW_RESOLUTION = (512, 288)
     UI_THUMBNAIL_RESOLUTION = 128
     MODEL_PLACEHOLDER_PATH = 'D:\\Softwares\\MAXON\\Cinema4DR20\\plugins\\ImportGLTF\\res\\modelPlaceholder.png'
 
@@ -257,6 +260,7 @@ class ThreadedRequest(C4DThread):
 
 class SketchfabApi:
     def __init__(self):
+        self.email = ''
         self.access_token = ''
         self.headers = {}
         self.display_name = ''
@@ -269,27 +273,32 @@ class SketchfabApi:
         self.search_results = {}
         self.threads = []
 
+        self.version_callback = None
         self.login_callback = None
         self.import_callback = None
         self.request_callback = None
         self.msgbox_callback = None
-        self.check_user_logged()
 
     def parse_plugin_version(self, request, *args, **kwargs):
         response = request.json()
         print(response)
-        return
-        if response and len(response) and 'tag_name' in response[0]:
-            latest_release_version = response[0]['tag_name']
-            current_version = str(bl_info['version']).replace(',', '').replace('(', '').replace(')', '').replace(' ', '')
+        if response and len(response):
+            if 'tag_name' in response:
+                latest_release_version = response['tag_name']
+                current_version = str(bl_info['version']).replace(',', '').replace('(', '').replace(')', '').replace(' ', '')
 
-            if latest_release_version == current_version:
-                print('You are using the latest version({})'.format(response[0]['tag_name']))
-            else:
-                print('A new version is available: {}'.format(response[0]['tag_name']))
-        else:
-            print('Failed to retrieve plugin version')
-            self.latest_release_version = -1
+                if latest_release_version == current_version:
+                    print('You are using the latest version({})'.format(response[0]['tag_name']))
+                else:
+                    print('A new version is available: {}'.format(response[0]['tag_name']))
+
+                return
+
+        print('Failed to retrieve plugin version')
+        self.latest_release_version = -1
+
+        if self.version_callback:
+            self.version_callback()
 
     def connect_to_sketchfab(self):
         self.check_plugin_version()
@@ -297,16 +306,18 @@ class SketchfabApi:
         self.request_user_info()
 
     def check_plugin_version(self):
-        thread = ThreadedRequest(Config.SKETCHFAB_PLUGIN_VERSION, self.headers, self.parse_plugin_version)
-        thread.Start()
-        self.threads.append(thread)
-        self.clear_threads()
+        # thread = ThreadedRequest(Config.SKETCHFAB_PLUGIN_VERSION, self.headers, self.parse_plugin_version)
+        # thread.Start()
+        # self.threads.append(thread)
+        # self.clear_threads()
+        requests.get(Config.SKETCHFAB_PLUGIN_VERSION, hooks={'response': self.parse_plugin_version})
 
     def request_user_info(self):
-        thread = ThreadedRequest(Config.SKETCHFAB_ME, self.headers, self.parse_user_info)
-        thread.Start()
-        self.threads.append(thread)
-        self.clear_threads()
+        # thread = ThreadedRequest(Config.SKETCHFAB_ME, self.headers, self.parse_user_info)
+        # thread.Start()
+        # self.threads.append(thread)
+        # self.clear_threads()
+        requests.get(Config.SKETCHFAB_ME, headers=self.headers, hooks={'response': self.parse_user_info})
 
 
     def get_sketchfab_model(self, uid):
@@ -318,7 +329,7 @@ class SketchfabApi:
     def handle_login(self, r, *args, **kwargs):
         if r.status_code == 200 and 'access_token' in r.json():
             self.access_token = r.json()['access_token']
-            # Cache.save_key('username', login_props.email)
+            Cache.save_key('username', self.email)
             Cache.save_key('access_token', self.access_token)
 
             self.build_headers()
@@ -339,6 +350,7 @@ class SketchfabApi:
         self.request_user_info()
 
     def login(self, email, password):
+        self.email = email
         url = '{}&username={}&password={}'.format(Config.SKETCHFAB_OAUTH, urllib.quote(email), urllib.quote(password))
         requests.post(url, hooks={'response': self.handle_login})
 
@@ -381,7 +393,6 @@ class SketchfabApi:
         self.is_user_pro = False
         self.display_name = ''
         self.plan_type = ''
-        Cache.delete_key('username')
         Cache.delete_key('access_token')
         Cache.delete_key('key')
 
@@ -396,9 +407,6 @@ class SketchfabApi:
             user_data = r.json()
             self.display_name = user_data['displayName']
             self.plan_type = user_data['account']
-            print(self.display_name)
-            print(self.plan_type)
-            print(self.access_token)
             self.is_user_pro = self.plan_type != 'basic'
             self.login_callback()
         else:
@@ -610,7 +618,9 @@ class ThreadedSearch(C4DThread):
             del self.skfb_api.search_results['current']
 
         self.skfb_api.search_results['current'] = OrderedDict()
-        print(len(json_data['results']))
+        if not 'result' in json_data:
+            print(json_data)
+
         for result in list(json_data['results']):
             model = SketchfabModel(result)
             self.skfb_api.search_results['current'][model.uid] = model
