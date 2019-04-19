@@ -76,7 +76,7 @@ class ImportGLTF(plugins.ObjectData):
         nodes = {}
         for nodeidx in range(len(gltf.data.nodes)):
             nodes[nodeidx] = self.convert_node(gltf, nodeidx, imported_materials)
-            self.progress_callback("Nodes", nodeidx + 1, len(gltf.data.nodes))
+            self.progress_callback("Importing nodes..", nodeidx + 1, len(gltf.data.nodes))
         print('Imported {} nodes'.format(len(nodes.keys())))
 
         # Add parented objects to document
@@ -87,11 +87,16 @@ class ImportGLTF(plugins.ObjectData):
                     current_document.InsertObject(nodes[child], parent=nodes[node])
 
         # Add root objects to document
+        # https://forums.newtek.com/showthread.php?115356-Layout-HPB-to-XYZ
+        # they are switched. H would be around the y axis, P would be the x axis and B would be the z axis, so yxz.
         for node in gltf.data.scenes[0].nodes:
+            # rootrot = nodes[node].GetRelRot()
+            # rootrot[1] = rootrot[1] + math.radians(180)
+            # nodes[node].SetRelRot(rootrot)
             nodes[node].SetRelScale([10.0, 10.0, 10.0])
             current_document.InsertObject(nodes[node])
 
-        self.progress_callback('FINISHED', 1, 1)
+        self.progress_callback('', 1, 1)
 
     def convert_primitive(self, prim, gltf, materials):
         # Helper functions
@@ -127,6 +132,7 @@ class ImportGLTF(plugins.ObjectData):
         for i in range(len(vertex)):
             vect = c4d.Vector(vertex[i][0], vertex[i][1], vertex[i][2])
             verts.append(self.switch_handedness_v3(vect))
+            #verts.append(vect)
 
         indices = BinaryData.get_data_from_accessor(gltf, prim.indices)
 
@@ -590,7 +596,7 @@ class ImportGLTF(plugins.ObjectData):
             self.set_emissive(material, mat)
 
             imported_materials[index] = mat
-            self.progress_callback("Material", index + 1, len(materials))
+            self.progress_callback("Importing materials...", index + 1, len(materials))
 
         return imported_materials
 
@@ -622,16 +628,19 @@ class ImportGLTF(plugins.ObjectData):
 
             # Copy texture to project textures directory
             self.gltf_textures.append(texture)  #TODO use list instead
-            self.progress_callback("Texture", len(self.gltf_textures), len(gltf.data.images))
+            self.progress_callback("Importing textures...", len(self.gltf_textures), len(gltf.data.images))
 
     def switch_handedness_v3(self, v3):
-        v3[2] = -v3[2]
+        v3[0] = -v3[0]
         return v3
 
-    def switch_handedness_rot(self, quat):
-        quat[1] = -quat[1]
-        quat[2] = -quat[2]
-        return quat
+    # Rot is expressed in HPB uring radians
+    # they are switched. H would be around the y axis, P would be the x axis and B would be the z axis, so yxz.
+
+    def switch_handedness_rot(self, xyz_rot):
+        xyz_rot[1] = -xyz_rot[1]
+        xyz_rot[2] = -xyz_rot[2]
+        return xyz_rot
         # axis = quat.v
         # angle = quat.w
         # axis[2] = -axis[2]
@@ -663,16 +672,19 @@ class ImportGLTF(plugins.ObjectData):
             c4d_object = c4d.BaseObject(c4d.Onull)
 
         c4d_object.SetName(gltf_node.name if gltf_node.name else "GLTFObject")
-        c4d_object.SetRotationOrder(c4d.ROTATIONORDER_XYZLOCAL)
+        c4d_object.SetRotationOrder(5)
         c4d_mat = c4d.Matrix()
         if gltf_node.matrix:
             mat = gltf_node.matrix
+            # print(mat)
             v1 = c4d.Vector(mat[0], mat[1], mat[2])
-            v2 = c4d.Vector(mat[4], mat[5], -mat[6])
-            v3 = c4d.Vector(mat[8], -mat[9], mat[10])
+            v2 = c4d.Vector(mat[4], mat[5], mat[6])
+            v3 = c4d.Vector(mat[8], mat[9], mat[10])
             off = c4d.Vector(mat[12], mat[13], mat[14])
             c4d_mat = c4d.Matrix(off, v1, v2, v3)
         else:
+            if gltf_node.translation or gltf_node.rotation or gltf_node.scale:
+                print('TMNO {}'.format(c4d_object.GetName()))
             if gltf_node.translation:
                 c4d_mat.off = c4d.Vector(gltf_node.translation[0], gltf_node.translation[1], gltf_node.translation[2])
             if gltf_node.rotation:
@@ -689,7 +701,9 @@ class ImportGLTF(plugins.ObjectData):
         c4d_object.SetMl(c4d_mat)
 
         # Convert to left-handed
-        c4d_object.SetRelPos(self.switch_handedness_v3(c4d_object.GetRelPos()))
+        # print('-- Rotation of {} is {}'.format(gltf_node.name, c4d_object.GetRelRot()))
+        c4d_object.SetAbsPos(self.switch_handedness_v3(c4d_object.GetAbsPos()))
         c4d_object.SetRelRot(self.switch_handedness_rot(c4d_object.GetRelRot()))
-        # c4d_object.SetRelScale(self.switch_handedness_v3(c4d_object.GetRelScale()))
+        # print('-- NEW IS {} is {}'.format(gltf_node.name, c4d_object.GetRelRot()))
+        #c4d_object.SetRelScale(self.switch_handedness_v3(c4d_object.GetRelScale()))
         return c4d_object
