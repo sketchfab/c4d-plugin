@@ -16,6 +16,7 @@ import time
 # enums
 UA_HEADER = 1000
 UA_ICON = 1001
+UI_PROGRESSBAR = 1002
 
 # Groups
 GROUP_HEADER = 2000
@@ -33,6 +34,11 @@ GROUP_FOOTER = 2011
 GROUP_FOOTER_VERSION = 2012
 GROUP_FOOTER_CONTACT = 2013
 
+# Model window
+GROUP_MODEL_WINDOW = 2014
+GROUP_MODEL_INFO = 2015
+GROUP_MODEL_IMPORT = 2016
+GROUP_MODEL_PROGRESS = 2017
 # Buttons
 BTN_SEARCH = 2100
 BTN_VIEW_SKFB = 2101
@@ -60,12 +66,24 @@ LB_LOGIN_EMAIL = 2206
 LB_LOGIN_PASSWORD = 2207
 LB_PLUGIN_VERSION = 2208
 LB_RESULT_NAME_START = 2209 # + 24 since 24 results on page
-LB_OR = 2210
+
+#Model Window
+LB_MODEL_NAME = 2210
+LB_MODEL_AUTHOR = 2211
+LB_MODEL_LICENCE = 2212
+LB_MODEL_VERTEX_COUNT = 2213
+LB_MODEL_FACE_COUNT = 2214
+LB_MODEL_ANIMATION_COUNT = 2215
+LB_MODEL_STEP = 2216
+
 
 # Editable
 EDITXT_LOGIN_EMAIL = 2300
 EDITXT_LOGIN_PASSWORD = 2301
 EDITXT_SEARCH_QUERY = 2302
+
+#DEBUG
+EDITXT_DEBUG_MODELNAME = 2303
 
 # Checkboxes
 CHK_MY_MODELS = 2400
@@ -89,7 +107,7 @@ CBOX_FACE_COUNT_ELT = 2526
 
 resultContainerIDStart = 2600 # + 24 since 24 results on page
 
-OVERRIDE_DOWNLOAD = False
+OVERRIDE_DOWNLOAD = True
 MODEL_PATH = 'D:\\Sketchfab\\repos\\samples\\'
 HEADER_PATH = 'D:\\Softwares\\MAXON\\Cinema4DR20\\plugins\\ImportGLTF\\res\\header.png'
 TEXT_WIDGET_HEIGHT = 10
@@ -364,6 +382,8 @@ class SkfbPluginDialog(gui.GeDialog):
     def refresh_login_ui(self):
         self.draw_login_ui()
         self.draw_search_ui()
+        if self.model_dialog:
+            self.model_dialog.refresh_window()
 
     def draw_search_ui(self):
         self.LayoutFlushGroup(GROUP_QUERY)
@@ -618,25 +638,14 @@ class SkfbPluginDialog(gui.GeDialog):
 class SkfbModelDialog(gui.GeDialog):
 
     skfb_model = None
-    PROGRESSBAR = 1001
-    PROGRESS_GROUP = 1000
-    IMG_MODEL_THUMBNAIL = 1010
-    LB_MODEL_NAME = 1011
-    LB_MODEL_AUTHOR = 1012
-    LB_MODEL_LICENCE = 1013
-    LB_VERTEX_COUNT = 1014
-    LB_FACE_COUNT = 1015
-    LB_ANIMATION_COUNT = 1016
-
-    GRP_MODEL_INFO_1 = 1020
-    GRP_MODEL_INFO_2 = 1021
-    GRP_MODEL_INFO_3 = 1022
-
     def __init__(self):
         self.progress = 0
         self.step = ''
+        self.status = ''
 
     def InitValues(self):
+        self.SetString(BTN_IMPORT, "Import model")
+        self.SetString(EDITXT_DEBUG_MODELNAME, "pimp")
         return True
 
     def import_model(self, path, uid):
@@ -647,10 +656,54 @@ class SkfbModelDialog(gui.GeDialog):
         self.skfb_model = skfb_model
         self.skfb_api = api
         self.skfb_api.import_callback = self.progress_callback
+        self.Enable(BTN_IMPORT, (self.skfb_api.is_user_logged() or OVERRIDE_DOWNLOAD))
+
+    def refresh_window(self):
+        self.draw_model_import()
 
     def CreateLayout(self):
         # Create the menu
         self.MenuFlushAll()
+
+        self.GroupBegin(GROUP_MODEL_WINDOW, c4d.BFH_CENTER|c4d.BFV_TOP, 1, 1, "Model Window")
+        self.draw_model_window()
+        self.GroupEnd()
+
+        self.GroupBegin(GROUP_MODEL_INFO, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 3, "Results",0) #id, flags, columns, rows, grouptext, groupflags
+        self.draw_model_details()
+        self.GroupEnd()
+
+        self.GroupBegin(GROUP_MODEL_IMPORT, c4d.BFH_CENTER|c4d.BFV_CENTER, 1, 3)
+        self.draw_model_import()
+        self.GroupEnd()
+
+        self.GroupBegin(GROUP_MODEL_PROGRESS, c4d.BFH_CENTER|c4d.BFV_CENTER, 1, 3)
+        self.draw_model_progress()
+        self.GroupEnd()
+
+        self.Enable(BTN_IMPORT, (self.skfb_api.is_user_logged() or OVERRIDE_DOWNLOAD))
+        return True
+
+    def draw_model_import(self):
+        self.LayoutFlushGroup(GROUP_MODEL_IMPORT)
+
+        self.Enable(BTN_IMPORT, (self.skfb_api.is_user_logged() or OVERRIDE_DOWNLOAD))
+        self.AddStaticText(id=LB_MODEL_STEP, flags=c4d.BFH_LEFT, initw=60, inith=0)
+        val = self.GetString(BTN_IMPORT)
+        if not val:
+            val = "IMPORT MODEL" if self.skfb_api.is_user_logged() else "You need to be logged in"
+
+        self.AddButton(id=BTN_IMPORT, flags=c4d.BFH_CENTER | c4d.BFV_CENTER, initw=200, inith=38, name=val)
+        self.LayoutChanged(GROUP_MODEL_IMPORT)
+
+    def draw_model_progress(self):
+        self.LayoutFlushGroup(GROUP_MODEL_PROGRESS)
+        self.AddCustomGui(UI_PROGRESSBAR, c4d.CUSTOMGUI_PROGRESSBAR, "", c4d.BFH_SCALEFIT, 0, 0)
+        self.LayoutChanged(GROUP_MODEL_PROGRESS)
+
+    def draw_model_window(self):
+        self.LayoutFlushGroup(GROUP_MODEL_WINDOW)
+
         # BIG Thumbnail
         use_thumbnail = True
         if use_thumbnail:
@@ -669,56 +722,32 @@ class SkfbModelDialog(gui.GeDialog):
             self.html.SetUrl("https://sketchfab.com/models/{}/embed?autostart=1".format(self.skfb_model.uid), c4d.URL_ENCODING_UTF16)
             self.html.DoAction(c4d.WEBPAGE_REFRESH)
 
-        # Model infos
-        # self.GroupBegin(self.GRP_MODEL_INFO_1, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 1, "Results",0) #id, flags, columns, rows, grouptext, groupflags
-        # self.draw_model_name()
-        # self.GroupEnd()
+        self.LayoutChanged(GROUP_MODEL_WINDOW)
 
-        # self.GroupBegin(self.GRP_MODEL_INFO_2, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 1, "Results",0) #id, flags, columns, rows, grouptext, groupflags
-        # self.draw_model_author()
-        # self.GroupEnd()
+    def draw_model_details(self):
+        self.LayoutFlushGroup(GROUP_MODEL_INFO)
 
-        # self.GroupBegin(self.GRP_MODEL_INFO_3, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 1, "Results",0) #id, flags, columns, rows, grouptext, groupflags
-        # self.draw_license_animation()
-        # self.GroupEnd()
-
-        self.GroupBegin(self.GRP_MODEL_INFO_1, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 3, "Results",0) #id, flags, columns, rows, grouptext, groupflags
-        self.draw_model_info()
-        self.GroupEnd()
-
-        #self.AddEditText(id=EDITXT_SEARCH_QUERY, flags=c4d.BFH_LEFT| c4d.BFV_CENTER, initw=500, inith=TEXT_WIDGET_HEIGHT)
-
-        self.GroupBegin(id=self.PROGRESS_GROUP, flags=c4d.BFH_CENTER|c4d.BFV_CENTER, cols=1, rows=3)
-        self.AddStaticText(id=3, flags=c4d.BFH_LEFT, initw=60, inith=0, name=u'{}'.format(self.step))
-        self.AddButton(id=BTN_IMPORT, flags=c4d.BFH_CENTER | c4d.BFV_CENTER, initw=200, inith=38, name="IMPORT MODEL")
-        #self.AddStaticText(id=3, flags=c4d.BFH_LEFT, initw=60, inith=30, name=u'{}'.format(self.step))
-        self.AddCustomGui(self.PROGRESSBAR, c4d.CUSTOMGUI_PROGRESSBAR, "", c4d.BFH_SCALEFIT, 0, 0)
-        self.GroupEnd()
-
-        return True
-
-    def draw_model_info(self):
-        self.LayoutFlushGroup(self.GRP_MODEL_INFO_1)
-
-        self.AddStaticText(id=self.LB_MODEL_NAME, flags=c4d.BFH_LEFT,
+        self.AddStaticText(id=LB_MODEL_NAME, flags=c4d.BFH_LEFT,
             initw=500, name=u'Title:         {}'.format(self.skfb_model.title))
         self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
-        self.AddStaticText(id=self.LB_VERTEX_COUNT, flags=c4d.BFH_RIGHT,
+        self.AddStaticText(id=LB_MODEL_VERTEX_COUNT, flags=c4d.BFH_RIGHT,
             initw=500, name=u'          Vertex Count:    {}'.format(Utils.humanify_number(self.skfb_model.vertex_count)))
 
-        self.AddStaticText(id=self.LB_MODEL_AUTHOR, flags=c4d.BFH_LEFT,
+        self.AddStaticText(id=LB_MODEL_AUTHOR, flags=c4d.BFH_LEFT,
             initw=500, name=u'Author:    {}'.format(self.skfb_model.author))
         self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
-        self.AddStaticText(id=self.LB_FACE_COUNT, flags=c4d.BFH_RIGHT,
+        self.AddStaticText(id=LB_MODEL_FACE_COUNT, flags=c4d.BFH_RIGHT,
             initw=500, name=u'          Face Count:       {}'.format(Utils.humanify_number(self.skfb_model.face_count)))
 
-        self.AddStaticText(id=self.LB_MODEL_LICENCE, flags=c4d.BFH_LEFT,
+        self.AddStaticText(id=LB_MODEL_LICENCE, flags=c4d.BFH_LEFT,
             initw=500, name=u'License:    {}'.format(self.skfb_model.license))
         self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
-        self.AddStaticText(id=self.LB_ANIMATION_COUNT, flags=c4d.BFH_RIGHT,
+        self.AddStaticText(id=LB_MODEL_ANIMATION_COUNT, flags=c4d.BFH_RIGHT,
             initw=500, name=u'          Animated:          {}'.format(self.skfb_model.animated))
 
-        self.LayoutChanged(self.GRP_MODEL_INFO_1)
+        self.AddEditText(id=EDITXT_DEBUG_MODELNAME, flags=c4d.BFH_LEFT| c4d.BFV_CENTER, initw=500, inith=TEXT_WIDGET_HEIGHT)
+
+        self.LayoutChanged(GROUP_MODEL_INFO)
 
     def Command(self, id, msg):
         if id == BTN_VIEW_SKFB:
@@ -726,9 +755,10 @@ class SkfbModelDialog(gui.GeDialog):
             webbrowser.open(url)
 
         if id == BTN_IMPORT:
+            self.status = 'Downloading...'
             self.EnableStatusBar()
             if OVERRIDE_DOWNLOAD:
-                query = self.GetString(EDITXT_SEARCH_QUERY)
+                query = self.GetString(EDITXT_DEBUG_MODELNAME)
                 path = os.path.join(MODEL_PATH, query)
                 for file in os.listdir(path):
                     if os.path.splitext(file)[-1] in ('.gltf', '.glb'):
@@ -750,7 +780,7 @@ class SkfbModelDialog(gui.GeDialog):
         progressMsg = c4d.BaseContainer(c4d.BFM_SETSTATUSBAR)
         self.step = 'Done'
         progressMsg.SetBool(c4d.BFM_STATUSBAR_PROGRESSON, False)
-        self.SendMessage(self.PROGRESSBAR, progressMsg)
+        self.SendMessage(UI_PROGRESSBAR, progressMsg)
 
     def InitValues(self):
         self.SetTimer(100)
@@ -759,13 +789,19 @@ class SkfbModelDialog(gui.GeDialog):
     def progress_callback(self, step, current, total):
         real_current = 100 / total * current / 100.0
         self.progress = real_current
-        self.step = step
+
+        if step != self.step:
+            self.step = step
+            self.status = step
+            self.SetString(LB_MODEL_STEP, self.status)
+           # self.refresh_window()
+
 
     def Timer(self, msg):
         progressMsg = c4d.BaseContainer(c4d.BFM_SETSTATUSBAR)
         progressMsg[c4d.BFM_STATUSBAR_PROGRESSON] = True
         progressMsg[c4d.BFM_STATUSBAR_PROGRESS] = self.progress
-        self.SendMessage(self.PROGRESSBAR, progressMsg)
+        self.SendMessage(UI_PROGRESSBAR, progressMsg)
 
     def Message(self, msg, result):
         if msg.GetId() == c4d.BFM_TIMER_MESSAGE:
