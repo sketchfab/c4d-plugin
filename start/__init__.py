@@ -85,18 +85,21 @@ class ImportGLTF(plugins.ObjectData):
             if gltf.data.nodes[int(node)].children:
                 for child in gltf.data.nodes[int(node)].children:
                     current_document.InsertObject(nodes[child], parent=nodes[node])
+                    # if nodes[child].GetName() == 'Cone006':
+                    #     self.print_matrix(nodes[child].GetMl(), nodes[child].GetName())
+                    #     self.print_matrix(nodes[child].GetMg(), nodes[child].GetName())
 
         # Add root objects to document
         # https://forums.newtek.com/showthread.php?115356-Layout-HPB-to-XYZ
         # they are switched. H would be around the y axis, P would be the x axis and B would be the z axis, so yxz.
         for node in gltf.data.scenes[0].nodes:
             # rootrot = nodes[node].GetRelRot()
-            # rootrot[1] = rootrot[1] + math.radians(180)
+            # rootrot[0] = rootrot[0] + math.radians(180)
             # nodes[node].SetRelRot(rootrot)
-            nodes[node].SetRelScale([10.0, 10.0, 10.0])
+            nodes[node].SetRelScale([100.0, 100.0, 100.0])
             current_document.InsertObject(nodes[node])
 
-        self.progress_callback('', 1, 1)
+         #self.progress_callback('', 1, 1)
 
     def convert_primitive(self, prim, gltf, materials):
         # Helper functions
@@ -196,8 +199,10 @@ class ImportGLTF(plugins.ObjectData):
                 colortag.SetPerPointMode(True)
                 colortag.SetName('GLTFVertexColor')
                 vtx_color_data = colortag.GetDataAddressW()
+
+                has_alpha = len(colors[0]) > 3
                 for i in range(nb_verts):
-                    c4d.VertexColorTag.SetPoint(vtx_color_data, None, None, i, c4d.Vector4d(colors[i][0], colors[i][1], colors[i][2], colors[i][3]))
+                    c4d.VertexColorTag.SetPoint(vtx_color_data, None, None, i, c4d.Vector4d(colors[i][0], colors[i][1], colors[i][2], colors[i][3] if has_alpha else 1.0))
 
             c4d_mesh.InsertTag(colortag)
 
@@ -259,6 +264,7 @@ class ImportGLTF(plugins.ObjectData):
         mattag.SetParameter(c4d.TEXTURETAG_PROJECTION, c4d.TEXTURETAG_PROJECTION_UVW, c4d.DESCFLAGS_GET_NONE)
         c4d_mesh.InsertTag(mattag)
 
+        c4d_mesh.SetDirty(c4d.DIRTYFLAGS_ALL)
 
         return c4d_mesh
 
@@ -291,6 +297,7 @@ class ImportGLTF(plugins.ObjectData):
         self.setGradient(colorizer, self.COLOR_WHITE, self.COLOR_BLACK)
 
     def make_specular_diffuse(self, spec_gloss, mat):
+        mat[c4d.MATERIAL_USE_COLOR] = True
         if not 'diffuseTexture' in spec_gloss:
             return
 
@@ -380,8 +387,7 @@ class ImportGLTF(plugins.ObjectData):
             mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_SHADER_ROUGHNESS, gloss_colorizer, c4d.DESCFLAGS_SET_NONE)
             mat.InsertShader(gloss_colorizer)
 
-        if 'glossinessFactor' in spec_gloss:
-            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_VALUE_ROUGHNESS, spec_gloss['glossinessFactor'], c4d.DESCFLAGS_SET_NONE)
+        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_VALUE_ROUGHNESS, spec_gloss.get('glossinessFactor', 1.0), c4d.DESCFLAGS_SET_NONE)
 
     def make_metallic_reflectance_layer(self, pbr_metal, mat):
         reflect = mat.AddReflectionLayer()
@@ -401,11 +407,11 @@ class ImportGLTF(plugins.ObjectData):
             mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_COLOR_TEXTURE, basecolortexshader, c4d.DESCFLAGS_SET_NONE)
             mat.InsertShader(basecolortexshader)
 
-        if pbr_metal.metallic_factor:
-            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_TRANS_BRIGHTNESS, pbr_metal.metallic_factor, c4d.DESCFLAGS_SET_NONE)
+        metallic_factor = pbr_metal.metallic_factor if pbr_metal.metallic_factor is not None else 1.0
+        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_TRANS_BRIGHTNESS, metallic_factor, c4d.DESCFLAGS_SET_NONE)
 
-        if pbr_metal.roughness_factor:
-            mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_VALUE_ROUGHNESS, pbr_metal.roughness_factor, c4d.DESCFLAGS_SET_NONE)
+        roughness_factor = pbr_metal.roughness_factor if pbr_metal.roughness_factor is not None else 1.0
+        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_VALUE_ROUGHNESS, roughness_factor, c4d.DESCFLAGS_SET_NONE)
 
         if pbr_metal.metallic_roughness_texture:
             # Metalness
@@ -467,7 +473,8 @@ class ImportGLTF(plugins.ObjectData):
             mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_TRANS_TEXTURE, metal_colorizer, c4d.DESCFLAGS_SET_NONE)
             mat.InsertShader(metal_colorizer)
 
-        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_VALUE_ROUGHNESS, pbr_metal.roughness_factor, c4d.DESCFLAGS_SET_NONE)
+        roughness_factor = pbr_metal.roughness_factor if pbr_metal.roughness_factor is not None else 1.0
+        mat.SetParameter(reflectid + c4d.REFLECTION_LAYER_MAIN_VALUE_ROUGHNESS, roughness_factor, c4d.DESCFLAGS_SET_NONE)
 
     def set_normal_map(self, material, mat):
         if not material.normal_texture:
@@ -631,22 +638,31 @@ class ImportGLTF(plugins.ObjectData):
             self.progress_callback("Importing textures...", len(self.gltf_textures), len(gltf.data.images))
 
     def switch_handedness_v3(self, v3):
-        v3[0] = -v3[0]
+        v3[2] = -v3[2]
+
         return v3
 
-    # Rot is expressed in HPB uring radians
-    # they are switched. H would be around the y axis, P would be the x axis and B would be the z axis, so yxz.
-
+    # Expects to be XYZ euler
     def switch_handedness_rot(self, xyz_rot):
         xyz_rot[1] = -xyz_rot[1]
         xyz_rot[2] = -xyz_rot[2]
-        return xyz_rot
-        # axis = quat.v
-        # angle = quat.w
-        # axis[2] = -axis[2]
-        # quat.SetAxis(axis, angle)
 
-        # return quat
+        return xyz_rot
+
+    def switch_handedness_quat(self, gltf_quat):
+        c4d_quat = gltf_quat
+        c4d_quat[1] = -c4d_quat[1]
+        c4d_quat[0] = -c4d_quat[0]
+
+        return c4d_quat
+
+    def switch_handedness_trans_matrix(self, off):
+        switchoff = off
+        switchoff[0] = -off[0]
+        switchoff[1] = -off[1]
+        switchoff[2] = -off[2]
+
+        return switchoff
 
     def gltf_to_c4d_quat(self, quat):
         qx, qy, qz, qw = quat
@@ -657,11 +673,51 @@ class ImportGLTF(plugins.ObjectData):
             axis[1] = qy / math.sqrt(1 - qw * qw)
             axis[2] = qz / math.sqrt(1 - qw * qw)
 
+        axis_v = c4d.Vector(axis[0], axis[1], axis[2])
+        axis_v.Normalize()
+
+        axis = [axis_v[0], axis_v[1], axis_v[2]]
+
         c4d_quat = c4d.Quaternion()
         c4d_quat.SetAxis(axis, angle)
 
         return c4d_quat
 
+    def gltf_quat_to_euler(self, gltf_quat):
+        c4d_quat = self.gltf_to_c4d_quat(gltf_quat)
+        result = c4d.utils.MatrixToHPB(c4d_quat.GetMatrix(), order=c4d.ROTATIONORDER_ZYXLOCAL)
+
+        return result
+
+    def matrix_from_trs(self, tr, quat, sc):
+        c4d_quat = self.gltf_to_c4d_quat(quat)
+
+        sc_matrix = c4d.Matrix()
+        sc_matrix.v1 = c4d.Vector(sc[0], 0.0, 0.0)
+        sc_matrix.v2 = c4d.Vector(0.0, sc[1], 0.0)
+        sc_matrix.v3 = c4d.Vector(0.0, 0.0, sc[2])
+
+        c4d_matrix = c4d.Matrix()
+        c4d_matrix = c4d_quat.GetMatrix() * sc_matrix
+
+        c4d_matrix.off = c4d.Vector(tr[0], tr[1], tr[2])
+
+        return c4d_matrix
+
+    def print_matrix(self, mat, name):
+        print('--MATRIX: {}'.format(name))
+        print(mat.v1)
+        print(mat.v2)
+        print(mat.v3)
+        print(mat.off)
+        print('\n\n')
+
+    def print_rot(self, obj):
+        rot = obj.GetAbsRot()
+        print('{} ({}, {}, {})'.format(obj.GetName(), math.degrees(rot[0]), math.degrees(rot[1]), math.degrees(rot[2])))
+
+    # Matrix are giving the good result, but TRS rotation is wrong
+    {}
     def convert_node(self, gltf, node_idx, materials=None):
         gltf_node = gltf.data.nodes[node_idx]
         c4d_object = None
@@ -672,38 +728,128 @@ class ImportGLTF(plugins.ObjectData):
             c4d_object = c4d.BaseObject(c4d.Onull)
 
         c4d_object.SetName(gltf_node.name if gltf_node.name else "GLTFObject")
-        c4d_object.SetRotationOrder(5)
+        c4d_object.SetRotationOrder(5)  # Local XYZ
         c4d_mat = c4d.Matrix()
+
         if gltf_node.matrix:
             mat = gltf_node.matrix
-            # print(mat)
             v1 = c4d.Vector(mat[0], mat[1], mat[2])
             v2 = c4d.Vector(mat[4], mat[5], mat[6])
             v3 = c4d.Vector(mat[8], mat[9], mat[10])
             off = c4d.Vector(mat[12], mat[13], mat[14])
             c4d_mat = c4d.Matrix(off, v1, v2, v3)
-        else:
-            if gltf_node.translation or gltf_node.rotation or gltf_node.scale:
-                print('TMNO {}'.format(c4d_object.GetName()))
+            c4d_object.SetMg(c4d_mat)
+
+            pos = c4d_object.GetAbsPos()
+            rot = c4d_object.GetAbsRot()
+
+            pos[2] = -pos[2]
+
+            rot[0] = -rot[0]
+            rot[1] = -rot[1]
+
+            c4d_object.SetAbsPos(pos)
+            c4d_object.SetAbsRot(rot)
+
+        elif False:
+            tr = [0.0, 0.0, 0.0]
+            quat = [0.0, 0.0, 0.0, 1.0]
+            scale = [1.0, 1.0, 1.0]
             if gltf_node.translation:
-                c4d_mat.off = c4d.Vector(gltf_node.translation[0], gltf_node.translation[1], gltf_node.translation[2])
+                tr = gltf_node.translation
+
             if gltf_node.rotation:
-                c4d_quat = self.gltf_to_c4d_quat(gltf_node.rotation)
-                c4d_mat = c4d_mat * c4d_quat.GetMatrix()
+                quat = gltf_node.rotation
+
             if gltf_node.scale:
                 scale = gltf_node.scale
-                c4d_scalemat = c4d.Matrix()
-                c4d_scalemat.v1[0] = scale[0]
-                c4d_scalemat.v2[1] = scale[1]
-                c4d_scalemat.v2[2] = scale[2]
-                c4d_mat = c4d_mat * c4d_scalemat
+                for idx in range(3):
+                    if scale[idx] <= 0.00001:
+                        scale[idx] = -0.00001 if scale[idx] < 0.0 else 0.00001
 
-        c4d_object.SetMl(c4d_mat)
+            c4d_object.SetMg(self.matrix_from_trs(tr, quat, scale))
 
-        # Convert to left-handed
-        # print('-- Rotation of {} is {}'.format(gltf_node.name, c4d_object.GetRelRot()))
-        c4d_object.SetAbsPos(self.switch_handedness_v3(c4d_object.GetAbsPos()))
-        c4d_object.SetRelRot(self.switch_handedness_rot(c4d_object.GetRelRot()))
-        # print('-- NEW IS {} is {}'.format(gltf_node.name, c4d_object.GetRelRot()))
-        #c4d_object.SetRelScale(self.switch_handedness_v3(c4d_object.GetRelScale()))
+        else:
+            if gltf_node.rotation:
+                euler = self.gltf_quat_to_euler(gltf_node.rotation)
+                c4d_object.SetAbsRot(c4d.Vector(euler[0], euler[1], euler[2]))
+
+            if gltf_node.scale:
+                scale = gltf_node.scale
+                c4d_object.SetAbsScale(c4d.Vector(scale[0], scale[1], scale[2]))
+
+            if gltf_node.translation:
+                tr = gltf_node.translation
+                c4d_object.SetAbsPos(c4d.Vector(tr[0], tr[1], tr[2]))
+
+
+            pos = c4d_object.GetAbsPos()
+            rot = c4d_object.GetAbsRot()
+
+            pos[0] = -pos[0]
+            # rot[0] = -rot[0]
+            # rot[2] = -rot[2]
+            c4d_object.SetAbsPos(pos)
+            c4d_object.SetAbsRot(rot)
+
+
+        #print('{}  \nTr: {} ({}) \nRt: {} ({}) \nSc: {} ({}) '.format(c4d_object.GetName(), c4d_object.GetRelPos(), c4d_object.GetAbsPos(), c4d_object.GetRelRot(), c4d_object.GetAbsRot(), c4d_object.GetRelScale(), c4d_object.GetAbsScale()))
+
+        # if gltf_node.matrix:
+        #     mat = gltf_node.matrix
+        #     v1 = c4d.Vector(mat[0], mat[1], mat[2])
+        #     v2 = c4d.Vector(mat[4], mat[5], mat[6])
+        #     v3 = c4d.Vector(mat[8], mat[9], mat[10])
+        #     off = self.switch_handedness_trans_matrix(c4d.Vector(mat[12], mat[13], mat[14]))  # LEFTHANDED
+        #     c4d_mat = c4d.Matrix(off, v1, v2, v3)
+
+        #     c4d_object.SetMl(c4d_mat)
+        # else:
+        #     # if False:
+        #     #     if gltf_node.translation:
+        #     #         c4d_mat.off = c4d.Vector(gltf_node.translation[0], gltf_node.translation[1], gltf_node.translation[2])
+        #     #     if gltf_node.rotation:
+        #     #         c4d_quat = self.gltf_to_c4d_quat(gltf_node.rotation)
+        #     #         c4d_mat = c4d_mat * c4d_quat.GetMatrix()
+        #     #     if gltf_node.scale:
+        #     #         scale = gltf_node.scale
+        #     #         for idx in range(3):
+        #     #             if scale[idx] <= 0.0:
+        #     #                 scale[idx] = 0.00001
+        #     #         c4d_scalemat = c4d.Matrix()
+        #     #         c4d_scalemat.v1[0] = scale[0]
+        #     #         c4d_scalemat.v2[1] = scale[1]
+        #     #         c4d_scalemat.v3[2] = scale[2]
+        #     #         c4d_mat = c4d_mat * c4d_scalemat
+        #     #     c4d_object.SetMl(c4d_mat)
+        #     # elif False:
+        #     #     if gltf_node.rotation:
+        #     #         quat = self.gltf_to_c4d_quat(gltf_node.rotation)
+        #     #         c4d_object.SetMl(quat.GetMatrix())
+        #     #     if gltf_node.translation:
+        #     #         c4d_object.SetRelPos(c4d.Vector(gltf_node.translation[0], gltf_node.translation[1], gltf_node.translation[2]))
+        #     #     if gltf_node.scale:
+        #     #         scale = gltf_node.scale
+        #     #         for idx in range(3):
+        #     #             if scale[idx] <= 0.00001:
+        #     #                 scale[idx] = -0.00001 if scale[idx] < 0.0 else 0.00001
+
+        #     #         c4d_object.SetRelScale(scale)
+        #     # else:
+        #         if gltf_node.translation:
+        #             gltf_translation = c4d.Vector(gltf_node.translation[0], gltf_node.translation[1], gltf_node.translation[2])
+        #             c4d_object.SetRelPos(self.switch_handedness_trans_matrix(gltf_translation))
+        #         if gltf_node.rotation:
+        #             # euler = self.gltf_quat_to_euler(self.switch_handedness_quat(gltf_node.rotation))
+        #             euler = self.gltf_quat_to_euler(gltf_node.rotation)
+        #             print('{} {}'.format(c4d_object.GetName(), euler))
+        #             c4d_object.SetRelRot(euler)
+        #         if gltf_node.scale:
+        #             scale = gltf_node.scale
+        #             for idx in range(3):
+        #                 if scale[idx] <= 0.00001:
+        #                     scale[idx] = -0.00001 if scale[idx] < 0.0 else 0.00001
+
+        #             c4d_object.SetRelScale(scale)
+
         return c4d_object
