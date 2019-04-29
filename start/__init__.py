@@ -93,10 +93,6 @@ class ImportGLTF(plugins.ObjectData):
         # https://forums.newtek.com/showthread.php?115356-Layout-HPB-to-XYZ
         # they are switched. H would be around the y axis, P would be the x axis and B would be the z axis, so yxz.
         for node in gltf.data.scenes[0].nodes:
-            # rootrot = nodes[node].GetRelRot()
-            # rootrot[0] = rootrot[0] + math.radians(180)
-            # nodes[node].SetRelRot(rootrot)
-            nodes[node].SetRelScale([100.0, 100.0, 100.0])
             current_document.InsertObject(nodes[node])
 
          #self.progress_callback('', 1, 1)
@@ -642,82 +638,25 @@ class ImportGLTF(plugins.ObjectData):
 
         return v3
 
-    # Expects to be XYZ euler
-    def switch_handedness_rot(self, xyz_rot):
-        xyz_rot[1] = -xyz_rot[1]
-        xyz_rot[2] = -xyz_rot[2]
+    def quat_to_eulerxyz(self, quat):
+        x, y, z, w = quat
 
-        return xyz_rot
+        import math
+        t0 = +2.0 * (w * x + y * z)
+        t1 = +1.0 - 2.0 * (x * x + y * y)
+        X = math.degrees(math.atan2(t0, t1))
 
-    def switch_handedness_quat(self, gltf_quat):
-        c4d_quat = gltf_quat
-        c4d_quat[1] = -c4d_quat[1]
-        c4d_quat[0] = -c4d_quat[0]
+        t2 = +2.0 * (w * y - z * x)
+        t2 = +1.0 if t2 > +1.0 else t2
+        t2 = -1.0 if t2 < -1.0 else t2
+        Y = math.degrees(math.asin(t2))
 
-        return c4d_quat
+        t3 = +2.0 * (w * z + x * y)
+        t4 = +1.0 - 2.0 * (y * y + z * z)
+        Z = math.degrees(math.atan2(t3, t4))
 
-    def switch_handedness_trans_matrix(self, off):
-        switchoff = off
-        switchoff[0] = -off[0]
-        switchoff[1] = -off[1]
-        switchoff[2] = -off[2]
+        return c4d.Vector(math.radians(X), math.radians(Y), math.radians(Z))
 
-        return switchoff
-
-    def gltf_to_c4d_quat(self, quat):
-        qx, qy, qz, qw = quat
-        axis = [1.0, 0.0, 0.0]
-        angle = 2 * math.acos(qw)
-        if angle != 0 and qw * qw != 1:
-            axis[0] = qx / math.sqrt(1 - qw * qw)
-            axis[1] = qy / math.sqrt(1 - qw * qw)
-            axis[2] = qz / math.sqrt(1 - qw * qw)
-
-        axis_v = c4d.Vector(axis[0], axis[1], axis[2])
-        axis_v.Normalize()
-
-        axis = [axis_v[0], axis_v[1], axis_v[2]]
-
-        c4d_quat = c4d.Quaternion()
-        c4d_quat.SetAxis(axis, angle)
-
-        return c4d_quat
-
-    def gltf_quat_to_euler(self, gltf_quat):
-        c4d_quat = self.gltf_to_c4d_quat(gltf_quat)
-        result = c4d.utils.MatrixToHPB(c4d_quat.GetMatrix(), order=c4d.ROTATIONORDER_ZYXLOCAL)
-
-        return result
-
-    def matrix_from_trs(self, tr, quat, sc):
-        c4d_quat = self.gltf_to_c4d_quat(quat)
-
-        sc_matrix = c4d.Matrix()
-        sc_matrix.v1 = c4d.Vector(sc[0], 0.0, 0.0)
-        sc_matrix.v2 = c4d.Vector(0.0, sc[1], 0.0)
-        sc_matrix.v3 = c4d.Vector(0.0, 0.0, sc[2])
-
-        c4d_matrix = c4d.Matrix()
-        c4d_matrix = c4d_quat.GetMatrix() * sc_matrix
-
-        c4d_matrix.off = c4d.Vector(tr[0], tr[1], tr[2])
-
-        return c4d_matrix
-
-    def print_matrix(self, mat, name):
-        print('--MATRIX: {}'.format(name))
-        print(mat.v1)
-        print(mat.v2)
-        print(mat.v3)
-        print(mat.off)
-        print('\n\n')
-
-    def print_rot(self, obj):
-        rot = obj.GetAbsRot()
-        print('{} ({}, {}, {})'.format(obj.GetName(), math.degrees(rot[0]), math.degrees(rot[1]), math.degrees(rot[2])))
-
-    # Matrix are giving the good result, but TRS rotation is wrong
-    {}
     def convert_node(self, gltf, node_idx, materials=None):
         gltf_node = gltf.data.nodes[node_idx]
         c4d_object = None
@@ -751,28 +690,9 @@ class ImportGLTF(plugins.ObjectData):
             c4d_object.SetAbsPos(pos)
             c4d_object.SetAbsRot(rot)
 
-        elif False:
-            tr = [0.0, 0.0, 0.0]
-            quat = [0.0, 0.0, 0.0, 1.0]
-            scale = [1.0, 1.0, 1.0]
-            if gltf_node.translation:
-                tr = gltf_node.translation
-
-            if gltf_node.rotation:
-                quat = gltf_node.rotation
-
-            if gltf_node.scale:
-                scale = gltf_node.scale
-                for idx in range(3):
-                    if scale[idx] <= 0.00001:
-                        scale[idx] = -0.00001 if scale[idx] < 0.0 else 0.00001
-
-            c4d_object.SetMg(self.matrix_from_trs(tr, quat, scale))
-
         else:
             if gltf_node.rotation:
-                euler = self.gltf_quat_to_euler(gltf_node.rotation)
-                c4d_object.SetAbsRot(c4d.Vector(euler[0], euler[1], euler[2]))
+                c4d_object.SetAbsRot(self.quat_to_eulerxyz(gltf_node.rotation))
 
             if gltf_node.scale:
                 scale = gltf_node.scale
@@ -782,74 +702,14 @@ class ImportGLTF(plugins.ObjectData):
                 tr = gltf_node.translation
                 c4d_object.SetAbsPos(c4d.Vector(tr[0], tr[1], tr[2]))
 
-
             pos = c4d_object.GetAbsPos()
             rot = c4d_object.GetAbsRot()
 
-            pos[0] = -pos[0]
-            # rot[0] = -rot[0]
-            # rot[2] = -rot[2]
+            pos[0] = pos[0]
+            pos[2] = -pos[2]
+            rot[2] = -rot[2]
+
             c4d_object.SetAbsPos(pos)
             c4d_object.SetAbsRot(rot)
-
-
-        #print('{}  \nTr: {} ({}) \nRt: {} ({}) \nSc: {} ({}) '.format(c4d_object.GetName(), c4d_object.GetRelPos(), c4d_object.GetAbsPos(), c4d_object.GetRelRot(), c4d_object.GetAbsRot(), c4d_object.GetRelScale(), c4d_object.GetAbsScale()))
-
-        # if gltf_node.matrix:
-        #     mat = gltf_node.matrix
-        #     v1 = c4d.Vector(mat[0], mat[1], mat[2])
-        #     v2 = c4d.Vector(mat[4], mat[5], mat[6])
-        #     v3 = c4d.Vector(mat[8], mat[9], mat[10])
-        #     off = self.switch_handedness_trans_matrix(c4d.Vector(mat[12], mat[13], mat[14]))  # LEFTHANDED
-        #     c4d_mat = c4d.Matrix(off, v1, v2, v3)
-
-        #     c4d_object.SetMl(c4d_mat)
-        # else:
-        #     # if False:
-        #     #     if gltf_node.translation:
-        #     #         c4d_mat.off = c4d.Vector(gltf_node.translation[0], gltf_node.translation[1], gltf_node.translation[2])
-        #     #     if gltf_node.rotation:
-        #     #         c4d_quat = self.gltf_to_c4d_quat(gltf_node.rotation)
-        #     #         c4d_mat = c4d_mat * c4d_quat.GetMatrix()
-        #     #     if gltf_node.scale:
-        #     #         scale = gltf_node.scale
-        #     #         for idx in range(3):
-        #     #             if scale[idx] <= 0.0:
-        #     #                 scale[idx] = 0.00001
-        #     #         c4d_scalemat = c4d.Matrix()
-        #     #         c4d_scalemat.v1[0] = scale[0]
-        #     #         c4d_scalemat.v2[1] = scale[1]
-        #     #         c4d_scalemat.v3[2] = scale[2]
-        #     #         c4d_mat = c4d_mat * c4d_scalemat
-        #     #     c4d_object.SetMl(c4d_mat)
-        #     # elif False:
-        #     #     if gltf_node.rotation:
-        #     #         quat = self.gltf_to_c4d_quat(gltf_node.rotation)
-        #     #         c4d_object.SetMl(quat.GetMatrix())
-        #     #     if gltf_node.translation:
-        #     #         c4d_object.SetRelPos(c4d.Vector(gltf_node.translation[0], gltf_node.translation[1], gltf_node.translation[2]))
-        #     #     if gltf_node.scale:
-        #     #         scale = gltf_node.scale
-        #     #         for idx in range(3):
-        #     #             if scale[idx] <= 0.00001:
-        #     #                 scale[idx] = -0.00001 if scale[idx] < 0.0 else 0.00001
-
-        #     #         c4d_object.SetRelScale(scale)
-        #     # else:
-        #         if gltf_node.translation:
-        #             gltf_translation = c4d.Vector(gltf_node.translation[0], gltf_node.translation[1], gltf_node.translation[2])
-        #             c4d_object.SetRelPos(self.switch_handedness_trans_matrix(gltf_translation))
-        #         if gltf_node.rotation:
-        #             # euler = self.gltf_quat_to_euler(self.switch_handedness_quat(gltf_node.rotation))
-        #             euler = self.gltf_quat_to_euler(gltf_node.rotation)
-        #             print('{} {}'.format(c4d_object.GetName(), euler))
-        #             c4d_object.SetRelRot(euler)
-        #         if gltf_node.scale:
-        #             scale = gltf_node.scale
-        #             for idx in range(3):
-        #                 if scale[idx] <= 0.00001:
-        #                     scale[idx] = -0.00001 if scale[idx] < 0.0 else 0.00001
-
-        #             c4d_object.SetRelScale(scale)
 
         return c4d_object
