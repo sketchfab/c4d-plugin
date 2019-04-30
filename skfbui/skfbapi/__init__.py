@@ -44,7 +44,6 @@ class Config:
     __plugin_title__ = "Sketchfab Plugin"
 
     PLUGIN_VERSION = "0.0.1"
-    PLUGIN_ID = 1025251
 
     # sometimes the path in preferences is empty
     def get_temp_path():
@@ -245,7 +244,6 @@ class Cache:
 
         with open(Cache.SKETCHFAB_CACHE_FILE, 'wb+') as f:
             f.write(json.dumps(cache_data).encode('utf-8'))
-
 
 class ThreadedRequest(C4DThread):
     def __init__(self, url, headers, callback=None):

@@ -23,13 +23,10 @@ UI_PROGRESSBAR = 1002
 # Groups
 GROUP_HEADER = 2000
 GROUP_LOGIN = 2001
-GROUP_SEARCH = 2002
 GROUP_QUERY = 2003
 GROUP_FILTERS =24004
-GROUP_FIVE = 2005
 GROUP_RESULTS_SCROLL = 2006
 GROUP_RESULTS = 2007
-GROUP_LOGIN_CONNECTED = 2008
 GROUP_PREVNEXT = 2009
 GROUP_UPGRADE_PRO = 2010
 GROUP_FOOTER = 2011
@@ -78,7 +75,6 @@ LB_MODEL_FACE_COUNT = 2214
 LB_MODEL_ANIMATION_COUNT = 2215
 LB_MODEL_STEP = 2216
 
-
 # Editable
 EDITXT_LOGIN_EMAIL = 2300
 EDITXT_LOGIN_PASSWORD = 2301
@@ -110,50 +106,37 @@ CBOX_FACE_COUNT_ELT = 2526
 resultContainerIDStart = 2600 # + 24 since 24 results on page
 
 OVERRIDE_DOWNLOAD = True
-MODEL_PATH = 'D:\\Sketchfab\\repos\\samples\\'
-HEADER_PATH = 'D:\\Softwares\\MAXON\\Cinema4DR20\\plugins\\ImportGLTF\\res\\header.png'
 TEXT_WIDGET_HEIGHT = 10
 
-import c4d
-from c4d import gui
 
 class UserAreaPathsHeader(gui.GeUserArea):
     """Sketchfab header image."""
-
+    header_path = 'D:\\Softwares\\MAXON\\Cinema4DR20\\plugins\\ImportGLTF\\res\\Sketchfab_Logo_C4D_x2.png'
     bmp = c4d.bitmaps.BaseBitmap()
 
     def GetMinSize(self):
-        self.width = 600
+        self.width = 266
         self.height = 75
         return (self.width, self.height)
 
     def DrawMsg(self, x1, y1, x2, y2, msg):
-        # thisFile = os.path.abspath(__file__)
-        # thisDirectory = os.path.dirname(thisFile)
-        # path = os.path.join(thisDirectory, "res", "header.png")
-        path = HEADER_PATH
-        result, ismovie = self.bmp.InitWith(path)
-        x1 = 0
-        y1 = 0
+        result, ismovie = self.bmp.InitWith(self.header_path)
         x2 = self.bmp.GetBw()
         y2 = self.bmp.GetBh()
 
         if result == c4d.IMAGERESULT_OK:
-            self.DrawBitmap(self.bmp, 0, 0, self.bmp.GetBw(), self.bmp.GetBh(),
-                            x1, y1, x2, y2, c4d.BMP_NORMALSCALED | c4d.BMP_ALLOWALPHA)
+            self.DrawBitmap(self.bmp, 0, 0, 266, 75,
+                            0, 0, x2, y2, c4d.BMP_NORMALSCALED | c4d.BMP_ALLOWALPHA)
 
     def Redraw(self):
         thisFile = os.path.abspath(__file__)
-        path = HEADER_PATH
-        result, ismovie = self.bmp.InitWith(path)
-        x1 = 0
-        y1 = 0
+        result, ismovie = self.bmp.InitWith(self.header_path)
         x2 = self.bmp.GetBw()
         y2 = self.bmp.GetBh()
 
         if result == c4d.IMAGERESULT_OK:
-            self.DrawBitmap(self.bmp, 0, 0, self.bmp.GetBw(), self.bmp.GetBh(),
-                            x1, y1, x2, y2, c4d.BMP_NORMALSCALED | c4d.BMP_ALLOWALPHA)
+            self.DrawBitmap(self.bmp, 0, 0, 266, 75,
+                            0, 0, x2, y2, c4d.BMP_NORMALSCALED | c4d.BMP_ALLOWALPHA)
 
 class ThreadedLogin(C4DThread):
     def __init__(self, api, email, password, callback=None):
@@ -216,7 +199,7 @@ class SkfbPluginDialog(gui.GeDialog):
         self.skfb_api.msgbox_callback = self.msgbox_message
 
         self.SetTitle(Config.__plugin_title__)
-        self.GroupBegin(GROUP_HEADER, c4d.BFH_CENTER|c4d.BFV_TOP, 1, 1, "Header")
+        self.GroupBegin(GROUP_HEADER, c4d.BFH_LEFT|c4d.BFV_TOP, 1, 1, "Header")
 
         self.LayoutFlushGroup(GROUP_HEADER)
 
@@ -309,10 +292,6 @@ class SkfbPluginDialog(gui.GeDialog):
         self.LayoutFlushGroup(GROUP_FOOTER)
         self.GroupBorderSpace(6, 2, 6, 6)
 
-        # self.GroupBegin(GROUP_FOOTER_CONTACT, c4d.BFH_LEFT|c4d.BFV_CENTER, 4, 1, "Footer_contact")
-        # self.draw_contact_ui()
-        # self.GroupEnd()
-
         # self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
         self.AddSeparatorV(0.0, flags=c4d.BFH_SCALE)
 
@@ -325,6 +304,7 @@ class SkfbPluginDialog(gui.GeDialog):
         self.GroupEnd()
 
         self.trigger_default_search()
+
         return True
 
     def msgbox_message(self, text):
@@ -335,13 +315,12 @@ class SkfbPluginDialog(gui.GeDialog):
 
         version_state = 'connect to check version'
         is_latest_version = True
-        if hasattr(self, 'skfb_api'):
-            if self.skfb_api.latest_release_version:
-                if self.skfb_api.latest_release_version != Config.PLUGIN_VERSION:
-                    version_state = 'outdated'
-                    is_latest_version = False
-                else:
-                    version_state = 'up to date'
+        if self.skfb_api.latest_release_version:
+            if self.skfb_api.latest_release_version != Config.PLUGIN_VERSION:
+                version_state = 'outdated'
+                is_latest_version = False
+            else:
+                version_state = 'up to date'
 
         self.AddStaticText(id=LB_PLUGIN_VERSION, flags=c4d.BFH_LEFT| c4d.BFV_CENTER, initw=0, inith=0, name="Plugin version: {} ({})".format(Config.PLUGIN_VERSION, version_state))
         if not is_latest_version:
@@ -361,7 +340,7 @@ class SkfbPluginDialog(gui.GeDialog):
             # self.AddStaticText(id=LB_CONNECT_STATUS, flags=c4d.BFH_LEFT, initw=0, inith=0, name='Connect to your user account')
             self.AddButton(id=BTN_CONNECT_SKETCHFAB, flags=c4d.BFH_CENTER | c4d.BFV_BOTTOM, initw=350, inith=TEXT_WIDGET_HEIGHT, name="Connect to Sketchfab")
         else:
-            if hasattr(self, "skfb_api") and self.skfb_api.is_user_logged():
+            if self.skfb_api.is_user_logged():
                 self.AddStaticText(id=LB_CONNECT_STATUS, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Connected as {}".format(self.skfb_api.display_name))
                 self.AddButton(id=BTN_CONNECT_SKETCHFAB, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Logout")
                 self.Enable(CHK_MY_MODELS, True)
@@ -449,39 +428,38 @@ class SkfbPluginDialog(gui.GeDialog):
 
 
     def draw_results_ui(self):
-        if hasattr(self, 'skfb_api'):
-            self.LayoutFlushGroup(GROUP_RESULTS)
-            if not self.result_valid():
-                return
+        self.LayoutFlushGroup(GROUP_RESULTS)
+        if not self.result_valid():
+            return
 
-            for index, skfb_model in enumerate(self.skfb_api.search_results['current'].values()):
-                image_container = c4d.BaseContainer() #Create a new container to store the image we will load for the button later on
-                self.GroupBegin(0, c4d.BFH_SCALEFIT|c4d.BFH_SCALEFIT, 1, 2, "Bitmap Example",0)
-                fn = c4d.storage.GeGetC4DPath(c4d.C4D_PATH_DESKTOP) #Gets the desktop path
-                filenameid = resultContainerIDStart + index
-                image_container.SetBool(c4d.BITMAPBUTTON_BUTTON, True)
-                image_container.SetBool(c4d.BITMAPBUTTON_NOBORDERDRAW, True)
-                image_container.SetFilename(filenameid, str(skfb_model.thumbnail_path))
+        for index, skfb_model in enumerate(self.skfb_api.search_results['current'].values()):
+            image_container = c4d.BaseContainer() #Create a new container to store the image we will load for the button later on
+            self.GroupBegin(0, c4d.BFH_SCALEFIT|c4d.BFH_SCALEFIT, 1, 2, "Bitmap Example",0)
+            fn = c4d.storage.GeGetC4DPath(c4d.C4D_PATH_DESKTOP) #Gets the desktop path
+            filenameid = resultContainerIDStart + index
+            image_container.SetBool(c4d.BITMAPBUTTON_BUTTON, True)
+            image_container.SetBool(c4d.BITMAPBUTTON_NOBORDERDRAW, True)
+            image_container.SetFilename(filenameid, str(skfb_model.thumbnail_path))
 
-                self.mybutton = self.AddCustomGui(filenameid, c4d.CUSTOMGUI_BITMAPBUTTON, "Sketchfab model button", c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 10, 10, image_container)
-                self.mybutton.SetLayoutMode(c4d.LAYOUTMODE_MINIMIZED)
-                self.mybutton.SetImage(str(skfb_model.thumbnail_path), False)
-                self.mybutton.SetToggleState(True)
+            self.mybutton = self.AddCustomGui(filenameid, c4d.CUSTOMGUI_BITMAPBUTTON, "Sketchfab model button", c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 10, 10, image_container)
+            self.mybutton.SetLayoutMode(c4d.LAYOUTMODE_MINIMIZED)
+            self.mybutton.SetImage(str(skfb_model.thumbnail_path), False)
+            self.mybutton.SetToggleState(True)
 
-                nameid = LB_RESULT_NAME_START + index
-                modelname = textwrap.wrap(skfb_model.title, 18)[0]  # dumbly truncate names for the UI
+            nameid = LB_RESULT_NAME_START + index
+            modelname = textwrap.wrap(skfb_model.title, 18)[0]  # dumbly truncate names for the UI
 
-                self.AddStaticText(id=nameid, flags=c4d.BFV_BOTTOM | c4d.BFH_CENTER,
-                        initw=192, inith=16, name=u'{}'.format(modelname), borderstyle=c4d.BORDER_WITH_TITLE)
+            self.AddStaticText(id=nameid, flags=c4d.BFV_BOTTOM | c4d.BFH_CENTER,
+                    initw=192, inith=16, name=u'{}'.format(modelname), borderstyle=c4d.BORDER_WITH_TITLE)
 
-                self.GroupEnd()
+            self.GroupEnd()
 
-            self.LayoutChanged(GROUP_RESULTS)
+        self.LayoutChanged(GROUP_RESULTS)
 
-            self.Enable(BTN_PREV_PAGE, self.skfb_api.has_prev())
-            self.Enable(BTN_NEXT_PAGE, self.skfb_api.has_next())
+        self.Enable(BTN_PREV_PAGE, self.skfb_api.has_prev())
+        self.Enable(BTN_NEXT_PAGE, self.skfb_api.has_next())
 
-            self.redraw_results = False
+        self.redraw_results = False
 
     def draw_upgrade_ui(self):
         self.LayoutFlushGroup(GROUP_UPGRADE_PRO)
@@ -672,7 +650,7 @@ class SkfbModelDialog(gui.GeDialog):
         self.draw_model_window()
         self.GroupEnd()
 
-        self.GroupBegin(GROUP_MODEL_INFO, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 3, "Results",0) #id, flags, columns, rows, grouptext, groupflags
+        self.GroupBegin(GROUP_MODEL_INFO, c4d.BFH_CENTER|c4d.BFV_TOP, 3, 3, "Results",0)
         self.draw_model_details()
         self.GroupEnd()
 
@@ -694,6 +672,7 @@ class SkfbModelDialog(gui.GeDialog):
         self.AddStaticText(id=LB_MODEL_STEP, flags=c4d.BFH_LEFT, initw=150, inith=0)
         val = self.GetString(BTN_IMPORT)
         val = self.status
+
         if not val:
             val = "IMPORT MODEL" if self.skfb_api.is_user_logged() else "You need to be logged in"
 
@@ -711,7 +690,7 @@ class SkfbModelDialog(gui.GeDialog):
         # BIG Thumbnail
         use_thumbnail = True
         if use_thumbnail:
-            image_container = c4d.BaseContainer() #Create a new container to store the image we will load for the button later on
+            image_container = c4d.BaseContainer() # Create a new container to store the image we will load for the button later on
             image_container.SetBool(c4d.BITMAPBUTTON_BUTTON, True)
             image_container.SetBool(c4d.BITMAPBUTTON_NOBORDERDRAW, True)
             image_container.SetFilename(resultContainerIDStart, self.skfb_model.thumbnail_path)
@@ -720,6 +699,7 @@ class SkfbModelDialog(gui.GeDialog):
             self.mybutton.SetLayoutMode(c4d.LAYOUTMODE_MINIMIZED)
             self.mybutton.SetImage(str(self.skfb_model.preview_path), False)
             self.mybutton.SetToggleState(False)
+
             self.AddButton(id=BTN_VIEW_SKFB, flags=c4d.BFH_CENTER | c4d.BFV_TOP, initw=150, inith=16, name="View on Sketchfab")
         else:
             self.html = self.AddCustomGui(1000, c4d.CUSTOMGUI_HTMLVIEWER, "html", c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 405, 720 )
@@ -764,7 +744,7 @@ class SkfbModelDialog(gui.GeDialog):
             self.EnableStatusBar()
             if OVERRIDE_DOWNLOAD:
                 query = self.GetString(EDITXT_DEBUG_MODELNAME)
-                path = os.path.join(MODEL_PATH, query)
+                path = os.path.join('D:\\Sketchfab\\repos\\samples\\', query)
                 for file in os.listdir(path):
                     if os.path.splitext(file)[-1] in ('.gltf', '.glb'):
                         #self.skfb_api.import_model(os.path.join(path, file), self.skfb_model.uid)
@@ -825,5 +805,4 @@ class SkfbModelDialog(gui.GeDialog):
             else:
                 return
         self.StopProgress()
-        print('ABORTED')
         return False
