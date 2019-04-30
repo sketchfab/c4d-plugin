@@ -31,8 +31,8 @@ import time
 
 from c4d.threading import C4DThread
 
-from gltfio.imp.gltf2_io_gltf import glTFImporter
-from gltfio.imp.gltf2_io_binary import BinaryData
+# from gltfio.imp.gltf2_io_gltf import glTFImporter
+# from gltfio.imp.gltf2_io_binary import BinaryData
 from start import ImportGLTF
 
 class Config:
@@ -281,7 +281,6 @@ class SketchfabApi:
 
     def parse_plugin_version(self, request, *args, **kwargs):
         response = request.json()
-        print(response)
         if response and len(response):
             if 'tag_name' in response:
                 latest_release_version = response['tag_name']
@@ -306,19 +305,10 @@ class SketchfabApi:
         self.request_user_info()
 
     def check_plugin_version(self):
-        # thread = ThreadedRequest(Config.SKETCHFAB_PLUGIN_VERSION, self.headers, self.parse_plugin_version)
-        # thread.Start()
-        # self.threads.append(thread)
-        # self.clear_threads()
         requests.get(Config.SKETCHFAB_PLUGIN_VERSION, hooks={'response': self.parse_plugin_version})
 
     def request_user_info(self):
-        # thread = ThreadedRequest(Config.SKETCHFAB_ME, self.headers, self.parse_user_info)
-        # thread.Start()
-        # self.threads.append(thread)
-        # self.clear_threads()
         requests.get(Config.SKETCHFAB_ME, headers=self.headers, hooks={'response': self.parse_user_info})
-
 
     def get_sketchfab_model(self, uid):
         if 'current' in self.search_results and uid in self.search_results['current']:
@@ -334,7 +324,6 @@ class SketchfabApi:
 
             self.build_headers()
             self.request_user_info()
-            print("LOGGED")
 
         else:
             print('Cannot login.\n{}'.format(r.json()))
@@ -379,13 +368,11 @@ class SketchfabApi:
         self.threads.append(downloader)
         self.clear_threads()
 
-    # Debug only, to override download
+    # Import should not be threadd
+    # see https://developers.maxon.net/docs/Cinema4DPythonSDK/html/modules/c4d.threading/index.html#threading-information
     def import_model(self, filepath, uid):
-        importer = ThreadedImporter(filepath, uid, self.import_callback)
-        importer.Start()
-
-        self.threads.append(importer)
-        self.clear_threads()
+        importer = ImportGLTF(self.import_callback)
+        importer.run(filepath, uid)
 
     def logout(self):
         self.access_token = ''
@@ -471,7 +458,6 @@ class SketchfabModel:
 
         self.thumbnail_url = os.path.join(Config.SKETCHFAB_THUMB_DIR, '{}.jpeg'.format(self.uid))
 
-
         # Model info request
         self.info_requested = False
         self.license = None
@@ -538,7 +524,6 @@ class ThreadedModelDownload(C4DThread):
     def get_archive(self, url):
         def unzip_archive(archive_path):
             if os.path.exists(archive_path):
-                # set_import_status('Unzipping model')
                 import zipfile
                 try:
                     zip_ref = zipfile.ZipFile(archive_path, 'r')
@@ -563,14 +548,12 @@ class ThreadedModelDownload(C4DThread):
         r = requests.get(url, stream=True)
         uid = Utils.get_uid_from_download_url(url)
         temp_dir = os.path.join(Config.SKETCHFAB_MODEL_DIR, uid)
+
         if not os.path.exists(temp_dir):
             os.makedirs(temp_dir)
 
         archive_path = os.path.join(temp_dir, '{}.zip'.format(uid))
         if not os.path.exists(archive_path):
-            # wm = bpy.context.window_manager
-            # wm.progress_begin(0, 100)
-            # set_log("Downloading model..")
             with open(archive_path, "wb") as f:
                 total_length = r.headers.get('content-length')
                 if total_length is None:  # no content length header
@@ -582,10 +565,6 @@ class ThreadedModelDownload(C4DThread):
                         dl += len(data)
                         f.write(data)
                         done = int(100 * dl / total_length)
-                        # wm.progress_update(done)
-                        # set_log("Downloading model..{}%".format(done))
-
-            # wm.progress_end()
         else:
             print('Model already downloaded')
 
@@ -598,7 +577,6 @@ class ThreadedModelDownload(C4DThread):
                 print(traceback.format_exc())
         else:
             model = self.get_sketchfab_model(uid)
-            # set_import_status("Import model ({})".format(model.download_size if model.download_size else 'fetching data'))
 
 
 class ThreadedSearch(C4DThread):
@@ -618,8 +596,6 @@ class ThreadedSearch(C4DThread):
             del self.skfb_api.search_results['current']
 
         self.skfb_api.search_results['current'] = OrderedDict()
-        if not 'result' in json_data:
-            print(json_data)
 
         for result in list(json_data['results']):
             model = SketchfabModel(result)

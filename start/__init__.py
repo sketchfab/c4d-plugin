@@ -14,7 +14,7 @@ import shutil
 
 from gltfio.imp.gltf2_io_gltf import glTFImporter
 from gltfio.imp.gltf2_io_binary import BinaryData
-from c4d import plugins
+from c4d import plugins, gui
 
 # Be sure to use a unique ID obtained from www.plugincafe.com
 PLUGIN_ID = 1025251
@@ -52,10 +52,14 @@ class ImportGLTF(plugins.ObjectData):
         self.sample_directory = ''
         self.gltf_textures = []
         self.gltf_materials = []
+        self.is_done = False
         pass
 
     def run(self, filepath, uid=None):
         import gltfio
+        self.is_done = False
+        current_document = c4d.documents.GetActiveDocument()
+        current_document.StartUndo()
 
         gltf = glTFImporter(filepath)
         success, txt = gltf.read()
@@ -69,7 +73,8 @@ class ImportGLTF(plugins.ObjectData):
         # Materials
         imported_materials = self.loadMaterials(gltf)
         for index in imported_materials:
-            c4d.documents.GetActiveDocument().InsertMaterial(imported_materials[index])
+            current_document.InsertMaterial(imported_materials[index])
+            current_document.AddUndo(c4d.UNDOTYPE_NEW, imported_materials[index])
         print('Imported {} materials'.format(len(imported_materials)))
 
         # Nodes
@@ -80,22 +85,33 @@ class ImportGLTF(plugins.ObjectData):
         print('Imported {} nodes'.format(len(nodes.keys())))
 
         # Add parented objects to document
-        current_document = c4d.documents.GetActiveDocument()
+
         for node in nodes.keys():
             if gltf.data.nodes[int(node)].children:
                 for child in gltf.data.nodes[int(node)].children:
                     current_document.InsertObject(nodes[child], parent=nodes[node])
-                    # if nodes[child].GetName() == 'Cone006':
-                    #     self.print_matrix(nodes[child].GetMl(), nodes[child].GetName())
-                    #     self.print_matrix(nodes[child].GetMg(), nodes[child].GetName())
+                    current_document.AddUndo(c4d.UNDOTYPE_NEW, nodes[child])
 
         # Add root objects to document
         # https://forums.newtek.com/showthread.php?115356-Layout-HPB-to-XYZ
         # they are switched. H would be around the y axis, P would be the x axis and B would be the z axis, so yxz.
         for node in gltf.data.scenes[0].nodes:
             current_document.InsertObject(nodes[node])
+            current_document.AddUndo(c4d.UNDOTYPE_NEW, nodes[node])
 
-         #self.progress_callback('', 1, 1)
+        c4d.documents.GetActiveDocument().SetChanged()
+        c4d.DrawViews()
+        c4d.documents.GetActiveDocument().EndUndo()
+        self.is_done = True
+
+        gltf_meta = gltf.data.asset
+        print(gltf_meta.extras)
+        title = gltf_meta.extras.get('title')
+        author = gltf_meta.extras.get('author')
+        license = gltf_meta.extras.get('license')
+        gui.MessageDialog(text='Successfuly imported model: \n\n"{}" by {} \n\nLicense: {}'.format(title, author, license), type=c4d.GEMB_OK)
+
+        self.progress_callback('', 1, 1)
 
     def convert_primitive(self, prim, gltf, materials):
         # Helper functions
@@ -713,3 +729,8 @@ class ImportGLTF(plugins.ObjectData):
             c4d_object.SetAbsRot(rot)
 
         return c4d_object
+
+    def AbortImport(self):
+        if not self.is_done:
+            c4d.documents.GetActiveDocument().EndUndo()
+            c4d.documents.GetActiveDocument().DoUndo()

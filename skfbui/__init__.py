@@ -13,6 +13,8 @@ import webbrowser
 
 import time
 
+from start import ImportGLTF
+
 # enums
 UA_HEADER = 1000
 UA_ICON = 1001
@@ -656,6 +658,7 @@ class SkfbModelDialog(gui.GeDialog):
         self.skfb_model = skfb_model
         self.skfb_api = api
         self.skfb_api.import_callback = self.progress_callback
+
         self.Enable(BTN_IMPORT, (self.skfb_api.is_user_logged() or OVERRIDE_DOWNLOAD))
 
     def refresh_window(self):
@@ -677,7 +680,7 @@ class SkfbModelDialog(gui.GeDialog):
         self.draw_model_import()
         self.GroupEnd()
 
-        self.GroupBegin(GROUP_MODEL_PROGRESS, c4d.BFH_CENTER|c4d.BFV_CENTER, 1, 3)
+        self.GroupBegin(GROUP_MODEL_PROGRESS, c4d.BFH_SCALEFIT|c4d.BFV_CENTER, 1, 3)
         self.draw_model_progress()
         self.GroupEnd()
 
@@ -688,8 +691,9 @@ class SkfbModelDialog(gui.GeDialog):
         self.LayoutFlushGroup(GROUP_MODEL_IMPORT)
 
         self.Enable(BTN_IMPORT, (self.skfb_api.is_user_logged() or OVERRIDE_DOWNLOAD))
-        self.AddStaticText(id=LB_MODEL_STEP, flags=c4d.BFH_LEFT, initw=60, inith=0)
+        self.AddStaticText(id=LB_MODEL_STEP, flags=c4d.BFH_LEFT, initw=150, inith=0)
         val = self.GetString(BTN_IMPORT)
+        val = self.status
         if not val:
             val = "IMPORT MODEL" if self.skfb_api.is_user_logged() else "You need to be logged in"
 
@@ -745,7 +749,8 @@ class SkfbModelDialog(gui.GeDialog):
         self.AddStaticText(id=LB_MODEL_ANIMATION_COUNT, flags=c4d.BFH_RIGHT,
             initw=500, name=u'          Animated:          {}'.format(self.skfb_model.animated))
 
-        self.AddEditText(id=EDITXT_DEBUG_MODELNAME, flags=c4d.BFH_LEFT| c4d.BFV_CENTER, initw=500, inith=TEXT_WIDGET_HEIGHT)
+        if OVERRIDE_DOWNLOAD:
+            self.AddEditText(id=EDITXT_DEBUG_MODELNAME, flags=c4d.BFH_LEFT| c4d.BFV_CENTER, initw=500, inith=TEXT_WIDGET_HEIGHT)
 
         self.LayoutChanged(GROUP_MODEL_INFO)
 
@@ -762,9 +767,9 @@ class SkfbModelDialog(gui.GeDialog):
                 path = os.path.join(MODEL_PATH, query)
                 for file in os.listdir(path):
                     if os.path.splitext(file)[-1] in ('.gltf', '.glb'):
-                        self.skfb_api.import_model(os.path.join(path, file), self.skfb_model.uid)
-                else:
-                    print('NOPATH')
+                        #self.skfb_api.import_model(os.path.join(path, file), self.skfb_model.uid)
+                        self.importer = ImportGLTF(self.progress_callback)
+                        self.importer.run(os.path.join(path, file), self.skfb_model.uid)
             else:
                 self.skfb_api.download_model(self.skfb_model.uid)
 
@@ -794,8 +799,8 @@ class SkfbModelDialog(gui.GeDialog):
             self.step = step
             self.status = step
             self.SetString(LB_MODEL_STEP, self.status)
-           # self.refresh_window()
-
+        if self.importer.is_done:
+            self.StopProgress()
 
     def Timer(self, msg):
         progressMsg = c4d.BaseContainer(c4d.BFM_SETSTATUSBAR)
@@ -813,5 +818,12 @@ class SkfbModelDialog(gui.GeDialog):
         return gui.GeDialog.Message(self, msg, result)
 
     def AskClose(self):
+        if self.importer and not self.importer.is_done:
+            answer = gui.MessageDialog(text='Are you sure you want to abort the import ?', type=c4d.GEMB_YESNO)
+            if answer == c4d.GEMB_R_YES:
+                self.importer.AbortImport()
+            else:
+                return
         self.StopProgress()
+        print('ABORTED')
         return False
