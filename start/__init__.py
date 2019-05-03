@@ -8,14 +8,10 @@ from gltfio.imp.gltf2_io_gltf import glTFImporter
 from gltfio.imp.gltf2_io_binary import BinaryData
 from c4d import plugins, gui
 
-# Be sure to use a unique ID obtained from www.plugincafe.com
-PLUGIN_ID = 1025251
-
+#TODO should be removed when plugin is final
 CURRENT_PATH = os.path.join('D:\\Softwares\\MAXON\\', 'plugins\\ImportGLTF')
 sys.path.insert(0, CURRENT_PATH)
-use_model_normals = True
 doc = c4d.documents.GetActiveDocument()
-
 
 class TextureWrapper:
     def __init__(self, filepath, sampler):
@@ -47,7 +43,7 @@ class ImportGLTF(plugins.ObjectData):
         self.gltf_textures = []
         self.gltf_materials = []
         self.is_done = False
-        pass
+        self.has_vertex_colors = False
 
     def run(self, filepath, uid=None):
         self.model_dir = os.path.split(filepath)[0]
@@ -93,12 +89,21 @@ class ImportGLTF(plugins.ObjectData):
         self.is_done = True
 
         gltf_meta = gltf.data.asset
-        title = gltf_meta.extras.get('title')
-        author = gltf_meta.extras.get('author')
-        license = gltf_meta.extras.get('license')
-        gui.MessageDialog(text='Successfuly imported model: \n\n"{}" by {} \n\nLicense: {}'.format(title, author, license), type=c4d.GEMB_OK)
+        if gltf_meta.extras:
+            title = gltf_meta.extras.get('title')
+            author = gltf_meta.extras.get('author')
+            license = gltf_meta.extras.get('license')
+            note = ''
+
+            if self.has_vertex_colors:
+                note = "\n\nNote: some vertex colors have been imported but disabled to avoid unexpected results.\nYou can enable them manually in their material Color and Reflection layer named 'Vertex Colors'"
+
+            gui.MessageDialog(text='Successfuly imported model: \n"{}" by {} \n\nLicense: {} {}'.format(title, author, license, note), type=c4d.GEMB_OK)
 
         self.progress_callback('', 1, 1)
+
+    def list_to_vec3(self, li):
+        return c4d.Vector(li[0], li[1], li[2])
 
     def convert_primitive(self, prim, gltf, materials):
         # Helper functions
@@ -113,9 +118,9 @@ class ImportGLTF(plugins.ObjectData):
 
           return (low_byte,high_byte)
 
-
+        # Normals tag. (Contains 12 WORDs per polygon, enumerated like the following: ax,ay,az,bx,by,bz,cx,cy,cz,dx,dy,dz.
+        # The value is the Real value of the normal vector component multiplied by 32000.0.)
         def set_normals(normal_tag,polygon,normal_a,normal_b,normal_c,normal_d) :
-
           normal_list = [normal_a, normal_b, normal_c, normal_d]
           normal_buffer = normal_tag.GetLowlevelDataAddressW()
           vector_size = 6
@@ -125,11 +130,33 @@ class ImportGLTF(plugins.ObjectData):
               normal = normal_list[v]
               component = [normal.x, normal.y, normal.z]
 
+
               for c in range(0,3) :
                   low_byte, high_byte = float2bytes(component[c])
 
                   normal_buffer[normal_tag.GetDataSize()*polygon+v*vector_size+c*component_size+0] = chr(low_byte)
                   normal_buffer[normal_tag.GetDataSize()*polygon+v*vector_size+c*component_size+1] = chr(high_byte)
+
+        def parse_normals():
+            normal = []
+            if 'NORMAL' in prim.attributes:
+                normal = BinaryData.get_data_from_accessor(gltf, prim.attributes['NORMAL'])
+
+            if normal:
+                normaltag = c4d.NormalTag(nb_poly)
+                for polyidx in range(nb_poly):
+                    poly = c4d_mesh.GetPolygon(polyidx)
+                    normal_a = self.switch_handedness_v3(self.list_to_vec3(normal[poly.a]))
+                    normal_b = self.switch_handedness_v3(self.list_to_vec3(normal[poly.b]))
+                    normal_c = self.switch_handedness_v3(self.list_to_vec3(normal[poly.c]))
+                    normal_d = c4d.Vector(0.0, 0.0, 0.0)
+
+                    set_normals(normaltag, polyidx, normal_a, normal_b, normal_c, normal_d)
+                c4d_mesh.InsertTag(normaltag)
+
+                # A Phong tag is needed to make C4D use the Normal Tag (seems to be done for Collada)
+                phong = c4d.BaseTag(5612)
+                c4d_mesh.InsertTag(phong)
 
         def parse_texcoords(index, c4d_mesh):
             texcoord_key = 'TEXCOORD_{}'.format(index)
@@ -166,29 +193,27 @@ class ImportGLTF(plugins.ObjectData):
                         c4d.VertexColorTag.SetPoint(vtx_color_data, None, None, i, c4d.Vector4d(colors[i][0], colors[i][1], colors[i][2], colors[i][3] if has_alpha else 1.0))
 
                 c4d_mesh.InsertTag(colortag)
+                self.has_vertex_colors = True
 
             return colortag
 
-        def set_normals_in_tag(normal_tag, normaldata):
-            buffer = normal_tag.GetLowlevelDataAddressW()
-            import array
-            floatArray = array.array('f')
-            floatArray.fromlist(normaldata)
-            print('Tag {} vs  lendata {}'.format(len(buffer), len(floatArray)))
-            data = floatArray.tostring()
-            buffer[:len(data)] = data
-            print(buffer)
+        def parse_tangents():
+            tangent = []
+            if 'TANGENT' in prim.attributes:
+                tangent = BinaryData.get_data_from_accessor(gltf, prim.attributes['TANGENT'])
+                if tangent:
+                    tangentTag = c4d.TangentTag(nb_poly)
+                    for polyidx in range(0, nb_poly):
+                        poly = c4d_mesh.GetPolygon(polyidx)
+                        normal_a = self.switch_handedness_v3(self.list_to_vec3(tangent[poly.a]))
+                        normal_b = self.switch_handedness_v3(self.list_to_vec3(tangent[poly.b]))
+                        normal_c = self.switch_handedness_v3(self.list_to_vec3(tangent[poly.c]))
+                        normal_d = c4d.Vector(0.0, 0.0, 0.0)
 
-        def print_buffers(prim):
-            vertex = BinaryData.get_data_from_accessor(gltf, prim.attributes['POSITION'])
-            indices = BinaryData.get_data_from_accessor(gltf, prim.indices)
-            normal = BinaryData.get_data_from_accessor(gltf, prim.attributes['NORMAL'])
+                        set_normals(tangentTag, polyidx, normal_a, normal_b, normal_c, normal_d)
 
-            print('Vertices: {}'.format(vertex))
-            print('Normals: {}'.format(normal))
-            print('indices: {}'.format(map(lambda x: x[0], indices)))
+                    c4d_mesh.InsertTag(tangentTag)
 
-        print_buffers(prim)
 
         vertex = BinaryData.get_data_from_accessor(gltf, prim.attributes['POSITION'])
         nb_vertices = len(vertex)
@@ -198,8 +223,6 @@ class ImportGLTF(plugins.ObjectData):
         for i in range(len(vertex)):
             vect = c4d.Vector(vertex[i][0], vertex[i][1], vertex[i][2])
             verts.append(self.switch_handedness_v3(vect))
-            #verts.append(vect)
-
 
         indices = BinaryData.get_data_from_accessor(gltf, prim.indices)
         nb_poly = len(indices) / 3
@@ -214,59 +237,21 @@ class ImportGLTF(plugins.ObjectData):
             c4d_mesh.SetPolygon(current_poly, poly)
             current_poly += 1
 
-        # NORMALS
-        # Normals tag. (Contains 12 WORDs per polygon, enumerated like the following: ax,ay,az,bx,by,bz,cx,cy,cz,dx,dy,dz.
-        # The value is the Real value of the normal vector component multiplied by 32000.0.)
-        if use_model_normals:
-            normal = []
-            if 'NORMAL' in prim.attributes:
-                normal = BinaryData.get_data_from_accessor(gltf, prim.attributes['NORMAL'])
-
-            if normal:
-                normaltag = c4d.NormalTag(nb_poly)
-                for polyidx in range(nb_poly):
-                    poly = c4d_mesh.GetPolygon(polyidx)
-                    normal_a = c4d.Vector(normal[poly.a][0], normal[poly.a][1], -normal[poly.a][2])
-                    normal_b = c4d.Vector(normal[poly.b][0], normal[poly.b][1], -normal[poly.b][2])
-                    normal_c = c4d.Vector(normal[poly.c][0], normal[poly.c][1], -normal[poly.c][2])
-                    normal_d = c4d.Vector(0.0, 0.0, 0.0)
-
-                    set_normals(normaltag, polyidx, normal_a, normal_b, normal_c, normal_d)
-                c4d_mesh.InsertTag(normaltag)
-
-        # else:
-        # According to imported Collada, phong is needed for normals
-        phong = c4d.BaseTag(5612)
-        c4d_mesh.InsertTag(phong)
+        parse_normals()
 
         # TANGENTS (Commented for now, "Tag not in sync" error popup in c4d)
-        # tangent = []
-        # if 'TANGENT' in prim.attributes:
-        #     tangent = BinaryData.get_data_from_accessor(gltf, prim.attributes['TANGENT'])
-        #     if tangent:
-        #         tangentTag = c4d.TangentTag(nb_poly)
-        #         for polyidx in range(0, nb_poly):
-        #             poly = c4d_mesh.GetPolygon(polyidx)
-        #             normal_a = c4d.Vector(tangent[poly.a][0], tangent[poly.a][1], -tangent[poly.a][2])
-        #             normal_b = c4d.Vector(tangent[poly.b][0], tangent[poly.b][1], -tangent[poly.b][2])
-        #             normal_c = c4d.Vector(tangent[poly.c][0], tangent[poly.c][1], -tangent[poly.c][2])
-        #             normal_d = c4d.Vector(0.0, 0.0, 0.0)
-
-        #             set_normals(tangentTag, polyidx, normal_a, normal_b, normal_c, normal_d)
-
-        #         c4d_mesh.InsertTag(tangentTag)
+        #parse_tangents()
 
         for texcoord_index in range(10):
             parse_texcoords(texcoord_index, c4d_mesh)
 
-        # Only parse COLORS_0
-        colortag = parse_vertex_colors(0, c4d_mesh)
-
         mat = materials[prim.material]
 
+        # Only parse COLORS_0
+        colortag = parse_vertex_colors(0, c4d_mesh)
+        self.make_vertex_colors_layer(mat, colortag)
         # Enable vertex colors for material
-        # if colortag:
-        #     self.enable_vertex_colors_material(mat, colortag)
+
 
         if not gltf.data.materials[prim.material].double_sided:
             mat.SetParameter(c4d.TEXTURETAG_SIDE,c4d.SIDE_FRONT ,c4d.DESCFLAGS_SET_NONE)
@@ -317,6 +302,30 @@ class ImportGLTF(plugins.ObjectData):
         mat.SetParameter(c4d.MATERIAL_COLOR_SHADER, diffusetexshader, c4d.DESCFLAGS_SET_NONE)
         mat.InsertShader(diffusetexshader)
 
+    def make_vertex_colors_layer(self, mat, colortag):
+        vtxcolorshader = c4d.BaseShader(1011137)
+        vtxcolorshader.SetParameter(c4d.SLA_DIRTY_VMAP_OBJECT, colortag, c4d.DESCFLAGS_GET_NONE)
+
+        use_diffuse = True
+        if not mat.GetParameter(c4d.MATERIAL_COLOR_SHADER, c4d.DESCFLAGS_SET_NONE):
+            mat.SetParameter(c4d.MATERIAL_COLOR_SHADER, vtxcolorshader, c4d.DESCFLAGS_SET_NONE)
+
+        # check if vertex color already enabled:
+        if not colortag or mat.GetReflectionLayerIndex(0).GetName() == 'Vertex Colors':
+            return
+
+        vtx_color_diffuse = mat.AddReflectionLayer()
+        vtx_color_diffuse.SetFlags(c4d.REFLECTION_FLAG_NONE)
+        vtx_color_diffuse.SetName("Vertex Colors")
+        vtxcolorid = vtx_color_diffuse.GetDataID()
+        mat.SetParameter(vtxcolorid + c4d.REFLECTION_LAYER_ENABLED, False, c4d.DESCFLAGS_SET_NONE)
+
+        refid = vtxcolorid + c4d.REFLECTION_LAYER_MAIN_DISTRIBUTION
+        mat.SetParameter(refid, c4d.REFLECTION_DISTRIBUTION_LAMBERTIAN, c4d.DESCFLAGS_SET_NONE)
+        mat.SetParameter(vtxcolorid + c4d.REFLECTION_LAYER_COLOR_TEXTURE, vtxcolorshader, c4d.DESCFLAGS_SET_NONE)
+
+        mat.InsertShader(vtxcolorshader)
+
     def make_diffuse_layer(self, pbr_metal, mat):
         # Diffuse: set lambert + baseColor in color + inverted metal in LayerMask
         diffuse = mat.AddReflectionLayer()
@@ -359,19 +368,6 @@ class ImportGLTF(plugins.ObjectData):
             sha[c4d.BITMAPSHADER_LAYERSET] = ls
 
         return sha
-
-    def enable_vertex_colors_material(self, mat, colortag):
-        # multi: 1019397
-        # single: 1011137
-        # Material has already a diffuse texture so no override
-        if mat[c4d.MATERIAL_USE_COLOR]:
-            return
-
-        mat[c4d.MATERIAL_USE_COLOR] = True
-        vtxcolorshader = c4d.BaseShader(1011137)
-        vtxcolorshader.SetParameter(c4d.SLA_DIRTY_VMAP_OBJECT, colortag, c4d.DESCFLAGS_GET_NONE)
-        mat.SetParameter(c4d.MATERIAL_COLOR_SHADER, vtxcolorshader, c4d.DESCFLAGS_SET_NONE)
-        mat.InsertShader(vtxcolorshader)
 
     def make_specular_layer(self, spec_gloss, mat):
         reflect = mat.AddReflectionLayer()
