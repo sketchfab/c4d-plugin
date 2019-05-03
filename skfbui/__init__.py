@@ -164,6 +164,7 @@ class SkfbPluginDialog(gui.GeDialog):
         #DEBGUG
         imp.reload(start)
         imp.reload(skfbapi)
+
         from start import *
         from skfbapi import *
 
@@ -669,7 +670,7 @@ class SkfbModelDialog(gui.GeDialog):
         self.LayoutFlushGroup(GROUP_MODEL_IMPORT)
 
         self.Enable(BTN_IMPORT, (self.skfb_api.is_user_logged() or OVERRIDE_DOWNLOAD))
-        self.AddStaticText(id=LB_MODEL_STEP, flags=c4d.BFH_LEFT, initw=150, inith=0)
+        self.AddStaticText(id=LB_MODEL_STEP, flags=c4d.BFH_CENTER, initw=250, inith=0)
         val = self.GetString(BTN_IMPORT)
         val = self.status
 

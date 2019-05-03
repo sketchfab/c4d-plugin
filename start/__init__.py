@@ -1,11 +1,3 @@
-"""
-RoundedTube
-Copyright: MAXON Computer GmbH
-Written for Cinema 4D R18
-
-Modified Date: 05/12/2018
-"""
-
 import os
 import math
 import sys
@@ -20,10 +12,8 @@ from c4d import plugins, gui
 PLUGIN_ID = 1025251
 
 CURRENT_PATH = os.path.join('D:\\Softwares\\MAXON\\', 'plugins\\ImportGLTF')
-# SAMPLE_PATH = CURRENT_PATH + '\\samples\\centaur'
-# MODEL_PATH = SAMPLE_PATH + '\\scene.gltf'
 sys.path.insert(0, CURRENT_PATH)
-use_model_normals = False
+use_model_normals = True
 doc = c4d.documents.GetActiveDocument()
 
 
@@ -35,13 +25,17 @@ class TextureWrapper:
     def to_c4d_shader(self, alpha_only=False):
         sha = c4d.BaseList2D(c4d.Xbitmap)
         sha[c4d.BITMAPSHADER_FILENAME] = self.filepath
+
         if alpha_only:
             ls = c4d.LayerSet()
             ls.SetMode(c4d.LAYERSETMODE_LAYERALPHA)
             sha[c4d.BITMAPSHADER_LAYERSET] = ls
 
-        return sha
+        # Barely support texture filtering
+        if self.sampler.min_filter in (9728, 9984) or self.sampler.mag_filter in (9728, 9984):
+            sha[c4d.BITMAPSHADER_INTERPOLATION] = c4d.BITMAPSHADER_INTERPOLATION_NONE
 
+        return sha
 
 class ImportGLTF(plugins.ObjectData):
     COLOR_BLACK = c4d.Vector(0.0, 0.0, 0.0)
@@ -49,63 +43,56 @@ class ImportGLTF(plugins.ObjectData):
 
     def __init__(self, progress_callback=None):
         self.progress_callback = progress_callback
-        self.sample_directory = ''
+        self.model_dir = ''
         self.gltf_textures = []
         self.gltf_materials = []
         self.is_done = False
         pass
 
     def run(self, filepath, uid=None):
-        import gltfio
+        self.model_dir = os.path.split(filepath)[0]
+
         self.is_done = False
-        current_document = c4d.documents.GetActiveDocument()
-        current_document.StartUndo()
+        doc = c4d.documents.GetActiveDocument()
 
         gltf = glTFImporter(filepath)
         success, txt = gltf.read()
 
-        self.sample_directory = os.path.split(filepath)[0]
-
         # Images
-        self.loadTextures(gltf)
-        print('Imported {} textures'.format(len(self.gltf_textures)))
+        self.import_gltf_textures(gltf)
 
         # Materials
-        imported_materials = self.loadMaterials(gltf)
+        imported_materials = self.import_gltf_materials(gltf)
         for index in imported_materials:
-            current_document.InsertMaterial(imported_materials[index])
-            current_document.AddUndo(c4d.UNDOTYPE_NEW, imported_materials[index])
-        print('Imported {} materials'.format(len(imported_materials)))
+            c4d.documents.GetActiveDocument().InsertMaterial(imported_materials[index])
+            #c4d.documents.GetActiveDocument().AddUndo(c4d.UNDOTYPE_NEW, imported_materials[index])
 
         # Nodes
         nodes = {}
         for nodeidx in range(len(gltf.data.nodes)):
             nodes[nodeidx] = self.convert_node(gltf, nodeidx, imported_materials)
-            self.progress_callback("Importing nodes..", nodeidx + 1, len(gltf.data.nodes))
+            self.progress_callback("Importing nodes", nodeidx + 1, len(gltf.data.nodes))
         print('Imported {} nodes'.format(len(nodes.keys())))
 
-        # Add parented objects to document
-
+        # Add objects to document and do parenting
         for node in nodes.keys():
             if gltf.data.nodes[int(node)].children:
                 for child in gltf.data.nodes[int(node)].children:
-                    current_document.InsertObject(nodes[child], parent=nodes[node])
-                    current_document.AddUndo(c4d.UNDOTYPE_NEW, nodes[child])
+                    c4d.documents.GetActiveDocument().InsertObject(nodes[child], parent=nodes[node])
+                    #c4d.documents.GetActiveDocument().AddUndo(c4d.UNDOTYPE_NEW, nodes[child])
 
         # Add root objects to document
-        # https://forums.newtek.com/showthread.php?115356-Layout-HPB-to-XYZ
-        # they are switched. H would be around the y axis, P would be the x axis and B would be the z axis, so yxz.
         for node in gltf.data.scenes[0].nodes:
-            current_document.InsertObject(nodes[node])
-            current_document.AddUndo(c4d.UNDOTYPE_NEW, nodes[node])
+            nodes[node].SetAbsScale(c4d.Vector(0.1, 0.1, 0.1))
+            c4d.documents.GetActiveDocument().InsertObject(nodes[node])
+            #c4d.documents.GetActiveDocument().AddUndo(c4d.UNDOTYPE_NEW, nodes[node])
 
         c4d.documents.GetActiveDocument().SetChanged()
         c4d.DrawViews()
-        c4d.documents.GetActiveDocument().EndUndo()
+        #c4d.documents.GetActiveDocument().EndUndo()
         self.is_done = True
 
         gltf_meta = gltf.data.asset
-        print(gltf_meta.extras)
         title = gltf_meta.extras.get('title')
         author = gltf_meta.extras.get('author')
         license = gltf_meta.extras.get('license')
@@ -115,157 +102,170 @@ class ImportGLTF(plugins.ObjectData):
 
     def convert_primitive(self, prim, gltf, materials):
         # Helper functions
-        def set_normals(normal_tag, polygon, normal_a, normal_b, normal_c, normal_d):
-            def float2bytes(f):
-                int_value = int(math.fabs(f * 32000.0))
-                high_byte = int(int_value / 256)
-                low_byte = int_value - 256 * high_byte
+        def float2bytes(f) :
+          int_value = int(math.fabs(f * 32000.0))
+          high_byte = int(int_value / 256)
+          low_byte = int_value - 256 * high_byte
 
-                if f < 0:
-                    high_byte = 255 - high_byte
-                    low_byte = 255 - low_byte
+          if f < 0:
+              high_byte = 255-high_byte
+              low_byte = 255-low_byte
 
-                return (low_byte, high_byte)
+          return (low_byte,high_byte)
 
-            normal_list = [normal_a, normal_b, normal_c, normal_d]
-            normal_buffer = normal_tag.GetLowlevelDataAddressW()
-            vector_size = 6
-            component_size = 2
 
-            for v in range(0, 4):
-                normal = normal_list[v]
-                component = [normal[0], normal[1], normal[2]]
+        def set_normals(normal_tag,polygon,normal_a,normal_b,normal_c,normal_d) :
 
-                for c in range(0, 3):
-                    low_byte, high_byte = float2bytes(component[c])
+          normal_list = [normal_a, normal_b, normal_c, normal_d]
+          normal_buffer = normal_tag.GetLowlevelDataAddressW()
+          vector_size = 6
+          component_size = 2
 
-                    normal_buffer[normal_tag.GetDataSize() * polygon + v * vector_size + c * component_size + 0] = chr(low_byte)
-                    normal_buffer[normal_tag.GetDataSize() * polygon + v * vector_size + c * component_size + 1] = chr(high_byte)
+          for v in range(0,4) :
+              normal = normal_list[v]
+              component = [normal.x, normal.y, normal.z]
+
+              for c in range(0,3) :
+                  low_byte, high_byte = float2bytes(component[c])
+
+                  normal_buffer[normal_tag.GetDataSize()*polygon+v*vector_size+c*component_size+0] = chr(low_byte)
+                  normal_buffer[normal_tag.GetDataSize()*polygon+v*vector_size+c*component_size+1] = chr(high_byte)
+
+        def parse_texcoords(index, c4d_mesh):
+            texcoord_key = 'TEXCOORD_{}'.format(index)
+            if texcoord_key in prim.attributes:
+                uvs = BinaryData.get_data_from_accessor(gltf, prim.attributes[texcoord_key])
+
+                if uvs:
+                    uvtag = c4d.UVWTag(nb_poly)
+                    uvtag.SetName(texcoord_key)
+                    for i in range(0, nb_poly):
+                        poly = c4d_mesh.GetPolygon(i)
+                        aa = (uvs[poly.a][0], uvs[poly.a][1], 0.0)
+                        bb = (uvs[poly.b][0], uvs[poly.b][1], 0.0)
+                        cc = (uvs[poly.c][0], uvs[poly.c][1], 0.0)
+                        uvtag.SetSlow(i, aa, bb, cc, (0.0, 0.0, 0.0))
+
+                    c4d_mesh.InsertTag(uvtag)
+
+        def parse_vertex_colors(index, c4d_mesh):
+            colors = []
+            color_key = 'COLOR_{}'.format(index)
+            colortag = None
+            if color_key in prim.attributes:
+                colors = BinaryData.get_data_from_accessor(gltf, prim.attributes[color_key])
+                if colors:
+                    nb_verts = len(verts)
+                    colortag = c4d.VertexColorTag(nb_verts)
+                    colortag.SetPerPointMode(True)
+                    colortag.SetName(color_key)
+                    vtx_color_data = colortag.GetDataAddressW()
+
+                    has_alpha = len(colors[0]) > 3
+                    for i in range(nb_verts):
+                        c4d.VertexColorTag.SetPoint(vtx_color_data, None, None, i, c4d.Vector4d(colors[i][0], colors[i][1], colors[i][2], colors[i][3] if has_alpha else 1.0))
+
+                c4d_mesh.InsertTag(colortag)
+
+            return colortag
+
+        def set_normals_in_tag(normal_tag, normaldata):
+            buffer = normal_tag.GetLowlevelDataAddressW()
+            import array
+            floatArray = array.array('f')
+            floatArray.fromlist(normaldata)
+            print('Tag {} vs  lendata {}'.format(len(buffer), len(floatArray)))
+            data = floatArray.tostring()
+            buffer[:len(data)] = data
+            print(buffer)
+
+        def print_buffers(prim):
+            vertex = BinaryData.get_data_from_accessor(gltf, prim.attributes['POSITION'])
+            indices = BinaryData.get_data_from_accessor(gltf, prim.indices)
+            normal = BinaryData.get_data_from_accessor(gltf, prim.attributes['NORMAL'])
+
+            print('Vertices: {}'.format(vertex))
+            print('Normals: {}'.format(normal))
+            print('indices: {}'.format(map(lambda x: x[0], indices)))
+
+        print_buffers(prim)
 
         vertex = BinaryData.get_data_from_accessor(gltf, prim.attributes['POSITION'])
+        nb_vertices = len(vertex)
+
+        # Vertices are stored under the form # [(1.0, 0.0, 0.0), (0.0, 0.0, 0.0) ...]
         verts = []
         for i in range(len(vertex)):
             vect = c4d.Vector(vertex[i][0], vertex[i][1], vertex[i][2])
             verts.append(self.switch_handedness_v3(vect))
             #verts.append(vect)
 
-        indices = BinaryData.get_data_from_accessor(gltf, prim.indices)
 
-        c4d_mesh = c4d.PolygonObject(len(vertex), len(indices))
+        indices = BinaryData.get_data_from_accessor(gltf, prim.indices)
+        nb_poly = len(indices) / 3
+
+        c4d_mesh = c4d.PolygonObject(nb_vertices, nb_poly)
         c4d_mesh.SetAllPoints(verts)
 
+        # Indices are stored like [(0,), (1,), (2,)]
+        current_poly = 0
         for i in range(0, len(indices), 3):
-            poly = c4d.CPolygon(indices[i][0], indices[i + 1][0], indices[i + 2][0])
-            c4d_mesh.SetPolygon(i, poly)
+            poly = c4d.CPolygon(indices[i+2][0], indices[i + 1][0], indices[i][0])  # indice list is like [(0,), (1,), (2,)]
+            c4d_mesh.SetPolygon(current_poly, poly)
+            current_poly += 1
 
         # NORMALS
+        # Normals tag. (Contains 12 WORDs per polygon, enumerated like the following: ax,ay,az,bx,by,bz,cx,cy,cz,dx,dy,dz.
+        # The value is the Real value of the normal vector component multiplied by 32000.0.)
         if use_model_normals:
             normal = []
             if 'NORMAL' in prim.attributes:
                 normal = BinaryData.get_data_from_accessor(gltf, prim.attributes['NORMAL'])
 
             if normal:
-                nb_normal = len(indices)
-                normaltag = c4d.NormalTag(nb_normal)
-                for i in range(0, nb_normal):
-                    poly = c4d_mesh.GetPolygon(i)
-                    normal_a = normal[poly.a]
-                    normal_b = normal[poly.b]
-                    normal_c = normal[poly.c]
-                    normal_d = (0.0, 0.0, 0.0)
+                normaltag = c4d.NormalTag(nb_poly)
+                for polyidx in range(nb_poly):
+                    poly = c4d_mesh.GetPolygon(polyidx)
+                    normal_a = c4d.Vector(normal[poly.a][0], normal[poly.a][1], -normal[poly.a][2])
+                    normal_b = c4d.Vector(normal[poly.b][0], normal[poly.b][1], -normal[poly.b][2])
+                    normal_c = c4d.Vector(normal[poly.c][0], normal[poly.c][1], -normal[poly.c][2])
+                    normal_d = c4d.Vector(0.0, 0.0, 0.0)
 
-                    set_normals(normaltag, i, normal_a, normal_b, normal_c, normal_d)
-
+                    set_normals(normaltag, polyidx, normal_a, normal_b, normal_c, normal_d)
                 c4d_mesh.InsertTag(normaltag)
-        else:
-            phong = c4d.BaseTag(5612)
-            c4d_mesh.InsertTag(phong)
 
-        # # UVS TANGENTS
-        # uvs = []
+        # else:
+        # According to imported Collada, phong is needed for normals
+        phong = c4d.BaseTag(5612)
+        c4d_mesh.InsertTag(phong)
+
+        # TANGENTS (Commented for now, "Tag not in sync" error popup in c4d)
         # tangent = []
         # if 'TANGENT' in prim.attributes:
         #     tangent = BinaryData.get_data_from_accessor(gltf, prim.attributes['TANGENT'])
         #     if tangent:
-        #         nb_tangent = len(indices)
-        #         tangentTag = c4d.TangentTag(nb_tangent)
-        #         for i in range(0, nb_tangent):
-        #             poly = c4d_mesh.GetPolygon(i)
-        #             normal_a = tangent[poly.a]
-        #             normal_b = tangent[poly.b]
-        #             normal_c = tangent[poly.c]
-        #             normal_d = (0.0, 0.0, 0.0, 0.0)
+        #         tangentTag = c4d.TangentTag(nb_poly)
+        #         for polyidx in range(0, nb_poly):
+        #             poly = c4d_mesh.GetPolygon(polyidx)
+        #             normal_a = c4d.Vector(tangent[poly.a][0], tangent[poly.a][1], -tangent[poly.a][2])
+        #             normal_b = c4d.Vector(tangent[poly.b][0], tangent[poly.b][1], -tangent[poly.b][2])
+        #             normal_c = c4d.Vector(tangent[poly.c][0], tangent[poly.c][1], -tangent[poly.c][2])
+        #             normal_d = c4d.Vector(0.0, 0.0, 0.0)
 
-        #             set_normals(tangentTag, i, normal_a, normal_b, normal_c, normal_d)
+        #             set_normals(tangentTag, polyidx, normal_a, normal_b, normal_c, normal_d)
 
         #         c4d_mesh.InsertTag(tangentTag)
 
-        # VERTEX COLORS
-        colors = []
-        colortag = None
-        if 'COLOR_0' in prim.attributes:
-            colors = BinaryData.get_data_from_accessor(gltf, prim.attributes['COLOR_0'])
-            if colors:
-                nb_verts = len(verts)
-                colortag = c4d.VertexColorTag(nb_verts)
-                colortag.SetPerPointMode(True)
-                colortag.SetName('GLTFVertexColor')
-                vtx_color_data = colortag.GetDataAddressW()
+        for texcoord_index in range(10):
+            parse_texcoords(texcoord_index, c4d_mesh)
 
-                has_alpha = len(colors[0]) > 3
-                for i in range(nb_verts):
-                    c4d.VertexColorTag.SetPoint(vtx_color_data, None, None, i, c4d.Vector4d(colors[i][0], colors[i][1], colors[i][2], colors[i][3] if has_alpha else 1.0))
-
-            c4d_mesh.InsertTag(colortag)
-
-        if 'TEXCOORD_0' in prim.attributes:
-            uvs = BinaryData.get_data_from_accessor(gltf, prim.attributes['TEXCOORD_0'])
-
-            if uvs:
-                nb_poly = len(indices)
-                uvtag = c4d.UVWTag(nb_poly)
-                for i in range(0, nb_poly):
-                    poly = c4d_mesh.GetPolygon(i)
-                    aa = (uvs[poly.a][0], uvs[poly.a][1], 0.0)
-                    bb = (uvs[poly.b][0], uvs[poly.b][1], 0.0)
-                    cc = (uvs[poly.c][0], uvs[poly.c][1], 0.0)
-                    uvtag.SetSlow(i, aa, bb, cc, (0.0, 0.0, 0.0))
-
-            c4d_mesh.InsertTag(uvtag)
-
-        if 'TEXCOORD_1' in prim.attributes:
-            uvs = BinaryData.get_data_from_accessor(gltf, prim.attributes['TEXCOORD_1'])
-
-            if uvs:
-                nb_poly = len(indices)
-                uvtag = c4d.UVWTag(nb_poly)
-                for i in range(0, nb_poly):
-                    poly = c4d_mesh.GetPolygon(i)
-                    aa = (uvs[poly.a][0], uvs[poly.a][1], 0.0)
-                    bb = (uvs[poly.b][0], uvs[poly.b][1], 0.0)
-                    cc = (uvs[poly.c][0], uvs[poly.c][1], 0.0)
-                    uvtag.SetSlow(i, aa, bb, cc, (0.0, 0.0, 0.0))
-
-            c4d_mesh.InsertTag(uvtag)
-
-        if 'TEXCOORD_2' in prim.attributes:
-            uvs = BinaryData.get_data_from_accessor(gltf, prim.attributes['TEXCOORD_2'])
-
-            if uvs:
-                nb_poly = len(indices)
-                uvtag = c4d.UVWTag(nb_poly)
-                for i in range(0, nb_poly):
-                    poly = c4d_mesh.GetPolygon(i)
-                    aa = (uvs[poly.a][0], uvs[poly.a][1], 0.0)
-                    bb = (uvs[poly.b][0], uvs[poly.b][1], 0.0)
-                    cc = (uvs[poly.c][0], uvs[poly.c][1], 0.0)
-                    uvtag.SetSlow(i, aa, bb, cc, (0.0, 0.0, 0.0))
-
-            c4d_mesh.InsertTag(uvtag)
+        # Only parse COLORS_0
+        colortag = parse_vertex_colors(0, c4d_mesh)
 
         mat = materials[prim.material]
+
+        # Enable vertex colors for material
         # if colortag:
-        #     # Set material to use Vertex colors
         #     self.enable_vertex_colors_material(mat, colortag)
 
         if not gltf.data.materials[prim.material].double_sided:
@@ -360,14 +360,13 @@ class ImportGLTF(plugins.ObjectData):
 
         return sha
 
-    def do_update(self, mat):
-        mat.Message(c4d.MSG_UPDATE)
-        mat.Update(True, True)
-        c4d.EventAdd()
-
     def enable_vertex_colors_material(self, mat, colortag):
         # multi: 1019397
         # single: 1011137
+        # Material has already a diffuse texture so no override
+        if mat[c4d.MATERIAL_USE_COLOR]:
+            return
+
         mat[c4d.MATERIAL_USE_COLOR] = True
         vtxcolorshader = c4d.BaseShader(1011137)
         vtxcolorshader.SetParameter(c4d.SLA_DIRTY_VMAP_OBJECT, colortag, c4d.DESCFLAGS_GET_NONE)
@@ -496,16 +495,15 @@ class ImportGLTF(plugins.ObjectData):
         normaltexshader = self.gltf_textures[material.normal_texture.index].to_c4d_shader()
         mat.SetParameter(c4d.MATERIAL_NORMAL_SHADER, normaltexshader, c4d.DESCFLAGS_SET_NONE)
         mat.InsertShader(normaltexshader)
-        # if need flipY normalmap: mat.SetParameter(c4d.MATERIAL_NORMAL_REVERSEY, 1,  c4d.DESCFLAGS_SET_NONE)
 
     def set_alpha(self, material, mat):
         if material.alpha_mode not in ('BLEND', 'MASK'):
             mat[c4d.MATERIAL_USE_ALPHA] = 0
             return
-        else:
-            mat[c4d.MATERIAL_USE_ALPHA] = 1
-            alpha_factor = 1.0
-            diffuse_alpha_shader = None
+
+        mat[c4d.MATERIAL_USE_ALPHA] = 1
+        alpha_factor = 1.0
+        diffuse_alpha_shader = None
 
         if material.extensions and 'KHR_materials_pbrSpecularGlossiness' in material.extensions:
             pbr_specular = material.extensions['KHR_materials_pbrSpecularGlossiness']
@@ -568,7 +566,6 @@ class ImportGLTF(plugins.ObjectData):
             emit_color = c4d.Vector(emit_factor[0], emit_factor[1], emit_factor[2])
             mat.SetParameter(c4d.MATERIAL_LUMINANCE_COLOR, emit_color, c4d.DESCFLAGS_SET_NONE)
 
-
     def create_material(self, name):
         mat = c4d.Material()
         mat.SetName(name)
@@ -581,7 +578,7 @@ class ImportGLTF(plugins.ObjectData):
 
         return mat
 
-    def loadMaterials(self, gltf):
+    def import_gltf_materials(self, gltf):
         ''' Might be replaced by imported c4d mat'''
         # Following tricks from https://forum.allegorithmic.com/index.php?topic=9757.0#msg85512
         materials = gltf.data.materials
@@ -615,12 +612,14 @@ class ImportGLTF(plugins.ObjectData):
             self.set_emissive(material, mat)
 
             imported_materials[index] = mat
-            self.progress_callback("Importing materials...", index + 1, len(materials))
+            self.progress_callback("Importing materials", index + 1, len(materials))
+
+        print('Imported {} materials'.format(len(imported_materials)))
 
         return imported_materials
 
     # Build an image shader for each image and add it to material channels by index
-    def loadTextures(self, gltf):
+    def import_gltf_textures(self, gltf):
         dest_textures_path = self.get_texture_path()
         self.gltf_textures = []
 
@@ -630,7 +629,7 @@ class ImportGLTF(plugins.ObjectData):
         for texture in gltf.data.textures:
             # 1. Copy texture to project directory
             image = gltf.data.images[texture.source]
-            fullpath = os.path.join(self.sample_directory, image.uri).replace('/', '\\')
+            fullpath = os.path.join(self.model_dir, image.uri).replace('/', '\\')
             if not os.path.exists(fullpath):
                 print('Texture not found')
                 return
@@ -647,7 +646,9 @@ class ImportGLTF(plugins.ObjectData):
 
             # Copy texture to project textures directory
             self.gltf_textures.append(texture)  #TODO use list instead
-            self.progress_callback("Importing textures...", len(self.gltf_textures), len(gltf.data.images))
+            self.progress_callback("Importing textures", len(self.gltf_textures), len(gltf.data.images))
+
+        print('Imported {} textures'.format(len(self.gltf_textures)))
 
     def switch_handedness_v3(self, v3):
         v3[2] = -v3[2]
@@ -731,6 +732,7 @@ class ImportGLTF(plugins.ObjectData):
         return c4d_object
 
     def AbortImport(self):
-        if not self.is_done:
-            c4d.documents.GetActiveDocument().EndUndo()
-            c4d.documents.GetActiveDocument().DoUndo()
+        pass
+        # if not self.is_done:
+            #c4d.documents.GetActiveDocument().EndUndo()
+            #c4d.documents.GetActiveDocument().DoUndo()

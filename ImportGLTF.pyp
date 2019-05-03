@@ -12,7 +12,7 @@ __plugin_title__ = "Sketchfab Plugin"
 __version__ = "0.0.1"
 __plugin_id__ = 1025251
 
-HELP_TEXT = "TAMAMAN"
+HELP_TEXT = "Sketchfab asset importer for C4D"
 CURRENT_PATH = os.path.join(os.getcwd(), 'plugins\\ImportGLTF\\')
 DEPTS_PATH = os.path.join(CURRENT_PATH, 'dependencies')
 SAMPLE_PATH = CURRENT_PATH + '\\samples\\cube\\Box.gltf'
@@ -59,7 +59,6 @@ if __name__ == "__main__":
     dir, file = os.path.split(__file__)
     iconPath = os.path.join(dir, "res", "icon.png")
     icon.InitWith(iconPath)
-    print("tamere")
     plugins.RegisterCommandPlugin(id=__plugin_id__,
                                   str=__plugin_title__,
                                   info=0,
