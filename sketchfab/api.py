@@ -48,14 +48,16 @@ class SketchfabApi:
         self.msgbox_callback = None
 
     def parse_plugin_version(self, request, *args, **kwargs):
+        self.latest_release_version = -1
         response = request.json()
         if response and len(response):
-            if 'tag_name' in response:
+            response = response[0]
+            if u'tag_name' in response:
                 self.latest_release_version = response['tag_name']
-                return
+                print('Latest Sketchfab plugin version is {}'.format(self.latest_release_version))
 
-        print('Failed to retrieve plugin version')
-        self.latest_release_version = -1
+        if self.latest_release_version == -1:
+            print('Failed to retrieve plugin version')
 
         if self.version_callback:
             self.version_callback()
