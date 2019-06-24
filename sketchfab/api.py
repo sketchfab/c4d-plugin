@@ -174,7 +174,11 @@ class SketchfabApi:
 
         model = self.search_results['current'][uid]
         json_data = r.json()
-        model.license = json_data['license']['fullName']
+        if json_data.get('license', {}).get('fullName'):
+            model.license = json_data['license']['fullName']
+        else:  # Personal models have no license
+            model.license = "Personal (you own this model)"
+
         anim_count = int(json_data['animationCount'])
         model.animated = 'Yes ({} animation(s))'.format(anim_count) if anim_count > 0 else 'No'
         self.search_results['current'][uid] = model
@@ -290,7 +294,7 @@ class SketchfabModel:
         self.thumbnail_path = Config.MODEL_PLACEHOLDER_PATH
         self.preview_path = Config.MODEL_PLACEHOLDER_PATH
 
-        if 'archives' in json_data and 'gltf' in json_data['archives']:
+        if json_data.get('archives', {}).get('gltf', {}).get('size', {}):
             self.download_size = Utils.humanify_size(json_data['archives']['gltf']['size'])
         else:
             self.download_size = None
