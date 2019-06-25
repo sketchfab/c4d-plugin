@@ -18,8 +18,8 @@ import c4d
 from c4d import storage
 
 class Config:
-    PLUGIN_TITLE = "Sketchfab Plugin (BETA)"
-    PLUGIN_VERSION = "0.0.85"
+    PLUGIN_TITLE = "Sketchfab Plugin"
+    PLUGIN_VERSION = "1.1.0"
     PLUGIN_DIRECTORY = os.path.dirname(os.path.dirname(__file__))
     MODEL_PLACEHOLDER_PATH = os.path.join(PLUGIN_DIRECTORY, 'res', 'modelPlaceholder.png')
 
