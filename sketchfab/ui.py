@@ -336,7 +336,7 @@ class SkfbPluginDialog(gui.GeDialog):
             self.AddButton(id=BTN_CONNECT_SKETCHFAB, flags=c4d.BFH_CENTER | c4d.BFV_BOTTOM, initw=350, inith=TEXT_WIDGET_HEIGHT, name="Connect to Sketchfab")
         else:
             if self.skfb_api.is_user_logged():
-                self.AddStaticText(id=LB_CONNECT_STATUS, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Connected as {}".format(self.skfb_api.display_name))
+                self.AddStaticText(id=LB_CONNECT_STATUS, flags=c4d.BFH_LEFT, initw=0, inith=0, name=u"Connected as {}".format(self.skfb_api.display_name))
                 self.AddButton(id=BTN_CONNECT_SKETCHFAB, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Logout")
                 self.Enable(CHK_MY_MODELS, True)
             else:
@@ -349,7 +349,7 @@ class SkfbPluginDialog(gui.GeDialog):
                 self.Enable(CHK_MY_MODELS, False)
 
         # Little hack to get username set in UI
-        self.SetString(LB_CONNECT_STATUS, "Connected as {}".format(self.skfb_api.display_name))
+        self.SetString(LB_CONNECT_STATUS, u"Connected as {}".format(self.skfb_api.display_name))
         self.LayoutChanged(GROUP_LOGIN)
 
     def refresh_version_ui(self):
