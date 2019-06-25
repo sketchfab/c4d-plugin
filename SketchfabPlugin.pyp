@@ -22,8 +22,8 @@ __author__ = "Sketchfab"
 __website__ = "sketchfab.com"
 __sketchfab__ = "http://sketchfab.com"
 __email__ = "support@sketchfab.com"
-__plugin_title__ = "Sketchfab Plugin (BETA)"
-__version__ = "0.0.85"
+__plugin_title__ = "Sketchfab Plugin"
+__version__ = "1.1.0"
 __plugin_id__ = 1052778
 
 HELP_TEXT = "Sketchfab asset importer for C4D"
