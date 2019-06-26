@@ -1,5 +1,7 @@
 # Sketchfab Plugin for C4D (Beta)
 
+**Temporary: See [PATCH.md](PATCH.md) for instructions**
+
 _This is a BETA version so it's important to save your document before using it_
 _Works only with C4D R20_
 
