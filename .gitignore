@@ -3,4 +3,4 @@ _pycache__/
 *.pyc
 *.cache
 gltfio/
-glTF-Blender-IO/
+releases/*
