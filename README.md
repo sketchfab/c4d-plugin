@@ -1,23 +1,31 @@
-# Sketchfab Plugin for C4D (Beta)
+# Sketchfab Plugin for Cinema4D (Beta)
 
-_This is a BETA version so it's important to save your document before using it_
-_Works only with C4D R20_
+_This plugin is still in a BETA version, so please make sure to save your documents before using it_
 
-## Version
-Sketchfab Plugin version 0.0.85 for Cinema4D
+_Only compatible with Cinema4D R.20_
 
 ## Installation
-Go to the [latest release page](https://github.com/sketchfab/c4d-plugin/releases/latest) to download the plugin and follow the documentation for installation.
 
-To prepare a development version of the plugin, clone the repo and run [build.sh](build.sh) with the **--patch** flag to patch the Khronos gltf code:
+Go to the [latest release page](https://github.com/sketchfab/c4d-plugin/releases/latest) to download the plugin and follow the installation instructions.
 
+## Development
+
+To prepare a development version of the plugin, you'll first have to clone this repository and update the [Khronos glTF IO](https://github.com/KhronosGroup/glTF-Blender-IO) submodule:
 ```sh
-git clone -b chore/gltf-dependency-uniformization_D3D-4952 --recursive git@github.com:sketchfab/c4d-plugin.git
-cd c4d-plugin
+git clone https://github.com/sketchfab/c4d-plugin.git
+cd c4d-plugin/
+git submodule update --init --recursive
+```
+
+You'll then need (only once) to patch the code from the Khronos submodule with the command:
+```sh
 ./build.sh --patch
 ```
 
-For the next releases, just run ```./build.sh``` in the repository directory.
+The final releases can then be built by executing build.sh without arguments:
+```
+./build.sh
+```
 
 ## Report an issue
 
