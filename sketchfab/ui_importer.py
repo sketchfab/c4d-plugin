@@ -29,6 +29,12 @@ from config import Config
 from cache import Cache
 from utils import Utils
 
+
+
+__importer_id__   = 1052778
+
+
+
 # enums
 UA_HEADER = 1000
 UA_ICON = 1001

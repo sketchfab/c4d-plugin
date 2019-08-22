@@ -1,3 +1,47 @@
+# Copyright(c) 2017-2019 Sketchfab Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from __future__ import division
+
+import textwrap
+import webbrowser
+import os
+
+# C4D modules
+import c4d
+from c4d import gui
+
+# Plugins modules
+from api import SketchfabApi
+from import_gltf import ImportGLTF
+from config import Config
+from cache import Cache
+from utils import Utils
+
+
+# Modules from the legacy exporter code
+import datetime
+import os
+import json
+import urllib2
+import shelve
+import webbrowser
+import zipfile
+import threading
+
+
+
 """
 Sketchfab Exporter v1.3.5
 
@@ -12,32 +56,19 @@ Creation Date: 09/06/12
 Modified Date: 03/16/13
 """
 
-import c4d
-from c4d import documents, gui, plugins, bitmaps, storage
-from c4d.threading import C4DThread
-
-import datetime
-import os
-import json
-import urllib2
-import shelve
-import webbrowser
-import zipfile
-import threading
 
 
 # Install and import the poster modules.
+# Should be replaced with requests
 try:
     from poster.encode import multipart_encode
     from poster.streaminghttp import register_openers
 except ImportError, err:
-    os_string = "osx"
 
-    if c4d.GeGetCurrentOS() == c4d.OPERATINGSYSTEM_WIN:
-        os_string = "win64"
+    os_string = "win64" if c4d.GeGetCurrentOS() == c4d.OPERATINGSYSTEM_WIN else "osx"
 
     pythonPath = os.path.join(c4d.storage.GeGetC4DPath(c4d.C4D_PATH_LIBRARY_USER), "python", "packages", os_string)
-    filePath = os.path.join(os.path.abspath(os.path.dirname(__file__)), "res")
+    filePath = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))), "dependencies")
     moduleFile = os.path.join(filePath, "poster-0.8.1.zip")
 
     try:
@@ -52,15 +83,10 @@ except ImportError, err:
         from poster.streaminghttp import register_openers
 
 
-__author__ = "Erwin Santacruz"
-__website__ = "http://990adjustments.com"
-__sketchfab__ = "http://sketchfab.com"
-__twitter__ = "@990adjustments"
-__email__ = "hi@990adjustments.com"
-__plugin_title__ = "Sketchfab Exporter"
-__version__ = "1.3.5"
-__copyright_year__ = datetime.datetime.now().year
-__plugin_id__ = 1029390
+
+
+
+
 
 BTN_ABOUT = 100001
 BTN_WEB = 100002
@@ -96,8 +122,28 @@ UA_HEADER = 30000
 UA_ICON = 30001
 
 
+
+
+
+
+
+__author__ = "Erwin Santacruz"
+__website__ = "http://990adjustments.com"
+__sketchfab__ = "http://sketchfab.com"
+__twitter__ = "@990adjustments"
+__email__ = "hi@990adjustments.com"
+__plugin_title__ = "Sketchfab Exporter"
+__version__ = "1.3.5"
+__copyright_year__ = datetime.datetime.now().year
+__exporter_id__ = 1029390
+
+
+
+
+
+
+
 # Constants
-HELP_TEXT = "Sketchfab Exporter v" + __version__
 SETTINGS = "com.990adjustments.SketchfabExport"
 SKETCHFAB_URL = "https://api.sketchfab.com/v1/models"
 FBX20142 = 1026370
@@ -117,7 +163,7 @@ export_options = {c4d.FBXEXPORT_LIGHTS: 1,
                   c4d.FBXEXPORT_SDS_SUBDIVISION: 1,
                   c4d.FBXEXPORT_ASCII: 0}
 
-WRITEPATH = os.path.join(storage.GeGetStartupWritePath(), 'Sketchfab')
+WRITEPATH = os.path.join(c4d.storage.GeGetStartupWritePath(), 'Sketchfab')
 FILEPATH = os.path.join(WRITEPATH, SETTINGS)
 
 if not os.path.exists(WRITEPATH):
@@ -127,6 +173,15 @@ if not os.path.exists(WRITEPATH):
 g_uploaded = False
 g_error = ""
 g_lastUpdated = ""
+
+
+
+
+
+
+
+
+
 
 
 class Utilities(object):
@@ -148,8 +203,8 @@ class Utilities(object):
     def ESOpen_about():
         """Show About information dialog box."""
 
-        gui.MessageDialog("{0} v{1}\nCopyright (C) {2} {3}\nAll rights reserved.\n\nWeb:      {4}\nTwitter:  {5}\nEmail:    {6}\n\n\
-This program comes with ABSOLUTELY NO WARRANTY. For details, please visit\nhttp://www.gnu.org/licenses/gpl.html"
+        """
+        gui.MessageDialog("{0} v{1}\nCopyright (C) {2} {3}\nAll rights reserved.\n\nWeb:      {4}\nTwitter:  {5}\nEmail:    {6}\n\nThis program comes with ABSOLUTELY NO WARRANTY. For details, please visit\nhttp://www.gnu.org/licenses/gpl.html"
                           .format(__plugin_title__,
                                   __version__,
                                   __copyright_year__,
@@ -157,6 +212,7 @@ This program comes with ABSOLUTELY NO WARRANTY. For details, please visit\nhttp:
                                   __website__,
                                   __twitter__,
                                   __email__), c4d.GEMB_OK)
+        """
 
     @staticmethod
     def ESZipdir(path, zipObject, title):
@@ -183,11 +239,11 @@ This program comes with ABSOLUTELY NO WARRANTY. For details, please visit\nhttp:
                 zipObject.write(os.path.join(path, 'tex', f))
 
 
-class PublishModelThread(C4DThread):
+class PublishModelThread(c4d.threading.C4DThread):
     """Class that publishes 3D model to Sketchfab.com."""
 
     def __init__(self, data, title, activeDoc, activeDocPath, enable_animation):
-        C4DThread.__init__(self)
+        c4d.threading.C4DThread.__init__(self)
         self.data = data
         self.title = title
         self.activeDoc = activeDoc
@@ -221,7 +277,7 @@ class PublishModelThread(C4DThread):
             options[key] = export_options[key]
 
         # FBX Export
-        documents.SaveDocument(self.activeDoc, exportFile,
+        c4d.documents.SaveDocument(self.activeDoc, exportFile,
                                c4d.SAVEDOCUMENTFLAGS_DONTADDTORECENTLIST, FBX20142)
 
         # restore options
@@ -231,7 +287,7 @@ class PublishModelThread(C4DThread):
         if not os.path.exists(exportFile):
             g_uploaded = False
             g_error = "Export failed."
-            c4d.SpecialEventAdd(__plugin_id__)
+            c4d.SpecialEventAdd(__exporter_id__)
             return False
 
         print("Export successful.")
@@ -275,12 +331,12 @@ class PublishModelThread(C4DThread):
         finally:
             # Clean up
             self.cleanup_files(archiveName, exportFile)
-            c4d.SpecialEventAdd(__plugin_id__)
+            c4d.SpecialEventAdd(__exporter_id__)
 
     def get_fbxexport_options(self):
         ''' Set the good options for fbx export to Sketchfab '''
         # Get the fbx export plugin
-        fbxplugin = plugins.FindPlugin(1026370, c4d.PLUGINTYPE_SCENESAVER)
+        fbxplugin = c4d.plugins.FindPlugin(1026370, c4d.PLUGINTYPE_SCENESAVER)
         if not fbxplugin:
             return
         # Access the plugin options
@@ -300,6 +356,14 @@ class PublishModelThread(C4DThread):
                 os.remove(export_file)
             except Exception:
                 print("Unable to remove file {0}".format(export_file))
+
+
+
+
+
+
+
+
 
 
 class UserAreaPathsHeader(gui.GeUserArea):
@@ -354,8 +418,7 @@ class MainDialog(gui.GeDialog):
 
         global g_lastUpdated
 
-        print("\n{0} v{1} loaded. Copyright (C) {2} {3}. All rights reserved.\n\n\
-This program comes with ABSOLUTELY NO WARRANTY. For details, please visit http://www.gnu.org/licenses/gpl.html\n\n"
+        print("\n{0} v{1} loaded. Copyright (C) {2} {3}. All rights reserved.\n\nThis program comes with ABSOLUTELY NO WARRANTY. For details, please visit http://www.gnu.org/licenses/gpl.html\n\n"
               .format(__plugin_title__, __version__, __copyright_year__, __author__))
 
         try:
@@ -435,7 +498,7 @@ This program comes with ABSOLUTELY NO WARRANTY. For details, please visit http:/
 
         self.MenuFinished()
 
-        docname = documents.GetActiveDocument().GetDocumentName()
+        docname = c4d.documents.GetActiveDocument().GetDocumentName()
 
         # ----------------------------------------------------------------------
         # Begin WRAPPER
@@ -572,7 +635,7 @@ This program comes with ABSOLUTELY NO WARRANTY. For details, please visit http:/
 
         global g_lastUpdated
 
-        if id == __plugin_id__:
+        if id == __exporter_id__:
             c4d.StatusSetBar(100)
 
             time_start = datetime.datetime.now()
@@ -640,7 +703,7 @@ This program comes with ABSOLUTELY NO WARRANTY. For details, please visit http:/
             Utilities.ESOpen_website(__website__)
 
         if id == BTN_THUMB_SRC_PATH:
-            selected = storage.LoadDialog(type=c4d.FILESELECTTYPE_ANYTHING)
+            selected = c4d.storage.LoadDialog(type=c4d.FILESELECTTYPE_ANYTHING)
             if not selected:
                 return False
             else:
@@ -665,7 +728,7 @@ This program comes with ABSOLUTELY NO WARRANTY. For details, please visit http:/
             self.groupSixWillRedraw()
 
             data = {}
-            activeDoc = documents.GetActiveDocument()
+            activeDoc = c4d.documents.GetActiveDocument()
             activeDocPath = activeDoc.GetDocumentPath()
             if not os.path.exists(activeDocPath):
                 path = c4d.storage.SaveDialog(type=c4d.FILESELECTTYPE_ANYTHING, title="Please save your scene", force_suffix="c4d")
@@ -677,7 +740,7 @@ This program comes with ABSOLUTELY NO WARRANTY. For details, please visit http:/
                     return False
 
             # Set document data with newly saved document
-            activeDoc = documents.GetActiveDocument()
+            activeDoc = c4d.documents.GetActiveDocument()
             activeDocPath = activeDoc.GetDocumentPath()
 
             self.Enable(BTN_PUBLISH, False)
@@ -733,8 +796,7 @@ This program comes with ABSOLUTELY NO WARRANTY. For details, please visit http:/
                 return False
 
             if len(api_token) == 0:
-                gui.MessageDialog("Please enter your API token. \
-Your API token can be found in your dashboard at sketchfab.com", c4d.GEMB_OK)
+                gui.MessageDialog("Please enter your API token. Your API token can be found in your dashboard at sketchfab.com", c4d.GEMB_OK)
                 self.Enable(BTN_PUBLISH, True)
                 self.SetTitle(__plugin_title__)
                 c4d.StatusClear()
@@ -777,44 +839,3 @@ Your API token can be found in your dashboard at sketchfab.com", c4d.GEMB_OK)
             self.publish.Wait(True)
 
         return True
-
-
-class SketchfabExporter(plugins.CommandData):
-    """Plugin class"""
-
-    dialog = None
-
-    def Execute(self, doc):
-        # Check C4D version
-        if c4d.GetC4DVersion() < 15000 and c4d.GeGetCurrentOS() == c4d.OPERATINGSYSTEM_WIN:
-            c4d.gui.MessageDialog("Sorry, but the plugin is incompatible with the version of Cinema 4D you are currently running.\n\n\
-The Sketchfab plugin for Windows requires\nCinema 4D R15 or greater.", c4d.GEMB_OK)
-            return False
-
-        if self.dialog is None:
-            self.dialog = MainDialog()
-
-        return self.dialog.Open(dlgtype=c4d.DLG_TYPE_ASYNC,
-                                pluginid=__plugin_id__,
-                                defaultw=600,
-                                defaulth=450)
-
-    def RestoreLayout(self, sec_ref):
-        if self.dialog is None:
-            self.dialog = MainDialog()
-
-        return self.dialog.Restore(pluginid=__plugin_id__, secret=sec_ref)
-
-
-if __name__ == "__main__":
-    icon = bitmaps.BaseBitmap()
-    dir, file = os.path.split(__file__)
-    iconPath = os.path.join(dir, "res", "icon.png")
-    icon.InitWith(iconPath)
-
-    plugins.RegisterCommandPlugin(id=__plugin_id__,
-                                  str=__plugin_title__,
-                                  info=0,
-                                  help=HELP_TEXT,
-                                  dat=SketchfabExporter(),
-                                  icon=icon)
