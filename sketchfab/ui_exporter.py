@@ -34,7 +34,6 @@ from utils import Utils
 import datetime
 import os
 import json
-import urllib2
 import shelve
 import webbrowser
 import zipfile
@@ -55,37 +54,6 @@ Description-US: Model exporter for Sketchfab.com
 Creation Date: 09/06/12
 Modified Date: 03/16/13
 """
-
-
-
-# Install and import the poster modules.
-# Should be replaced with requests
-try:
-    from poster.encode import multipart_encode
-    from poster.streaminghttp import register_openers
-except ImportError, err:
-
-    os_string = "win64" if c4d.GeGetCurrentOS() == c4d.OPERATINGSYSTEM_WIN else "osx"
-
-    pythonPath = os.path.join(c4d.storage.GeGetC4DPath(c4d.C4D_PATH_LIBRARY_USER), "python", "packages", os_string)
-    filePath = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))), "dependencies")
-    moduleFile = os.path.join(filePath, "poster-0.8.1.zip")
-
-    try:
-        zf = zipfile.ZipFile(moduleFile)
-        zf.extractall(pythonPath)
-        zf.close()
-    except Exception, err:
-        gui.MessageDialog("Unable to install necessary files. "
-                          "Please check the help for information on manual module installation.", c4d.GEMB_OK)
-    else:
-        from poster.encode import multipart_encode
-        from poster.streaminghttp import register_openers
-
-
-
-
-
 
 
 BTN_ABOUT = 100001
@@ -300,38 +268,39 @@ class PublishModelThread(c4d.threading.C4DThread):
         Utilities.ESZipdir(dirname, zip, self.title+'.fbx')
         zip.close()
 
-        self.data['fileModel'] = open(archiveName, 'rb')
-
         # Connection code
         # Begin upload
         print("Uploading...\n")
+
+        _headers = get_sketchfab_props().skfb_api.headers
+
         try:
-            register_openers()
-
-            post_data, headers = multipart_encode(self.data)
-            req = urllib2.Request(SKETCHFAB_URL, post_data, headers, unverifiable=False)
-            response = urllib2.urlopen(url=req)
-            json_response = json.loads(str(response.read()))
-
-            if response and json_response["success"]:
-                model_id = json_response['result']['id']
-                response.close()
-                g_uploaded = True
-                # Open website on model page
-                result = gui.MessageDialog("Your model was succesfully uploaded to Sketchfab.com.\nClick OK to open the browser on your model page", c4d.GEMB_OKCANCEL)
-                if result == c4d.GEMB_R_OK:
-                    Utilities.ESOpen_website(__sketchfab__ + '/models/' + model_id)
-            else:
-                g_error = "Invalid response from server."
-
-        except Exception as error:
+            r = SketchfabApi.requests.post(
+                Config.SKETCHFAB_MODEL,
+                data    = self.data,
+                files   = {"modelFile": open(archiveName, 'rb')},
+                headers = _headers
+            )
+        except requests.exceptions.RequestException as e:
             g_uploaded = False
             g_error = error
+            return 
 
-        finally:
-            # Clean up
-            self.cleanup_files(archiveName, exportFile)
-            c4d.SpecialEventAdd(__exporter_id__)
+        result = r.json()
+
+        if r.status_code != requests.codes.created:
+            g_error = "Invalid response from server."
+        else:
+            model_id = result["uid"]
+            g_uploaded = True
+            # Open website on model page
+            result = gui.MessageDialog("Your model was succesfully uploaded to Sketchfab.com.\nClick OK to open the browser on your model page", c4d.GEMB_OKCANCEL)
+            if result == c4d.GEMB_R_OK:
+                Utilities.ESOpen_website(__sketchfab__ + '/models/' + model_id)
+
+        # Clean up
+        self.cleanup_files(archiveName, exportFile)
+        c4d.SpecialEventAdd(__exporter_id__)
 
     def get_fbxexport_options(self):
         ''' Set the good options for fbx export to Sketchfab '''
@@ -356,11 +325,6 @@ class PublishModelThread(c4d.threading.C4DThread):
                 os.remove(export_file)
             except Exception:
                 print("Unable to remove file {0}".format(export_file))
-
-
-
-
-
 
 
 
@@ -815,7 +779,7 @@ class MainDialog(gui.GeDialog):
 
             data['tags'] = 'cinema4d '
             if len(tags) != 0:
-                data['tags'] += tags
+                data['tags'] += " ".join(props.tags.split(" ")[:41])
 
             data['title'] = title
             data['token'] = api_token
