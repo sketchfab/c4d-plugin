@@ -1,0 +1,261 @@
+"""
+une classe commune aux deux plugins
+qui contient le login et fait les checks de connexion / identification
+"""
+
+import os
+
+import c4d
+from config import Config
+from cache  import Cache
+
+from api import SketchfabApi
+
+
+UA_HEADER = 1000
+UA_ICON = 1001
+
+GROUP_HEADER = 2000
+GROUP_LOGIN = 2001
+GROUP_FOOTER = 2011
+GROUP_FOOTER_VERSION = 2012
+GROUP_FOOTER_CONTACT = 2013
+GROUP_UPGRADE_PRO = 2010
+
+BTN_CONNECT_SKETCHFAB = 2108
+BTN_LOGIN = 2105
+BTN_CREATE_ACCOUNT = 2113
+BTN_DOCUMENTATION = 2111
+BTN_REPORT = 2112
+BTN_OPEN_CACHE = 2114
+BTN_UPGRADE_PLUGIN = 2110
+BTN_UPGRADE_PRO = 2109
+
+LB_UPGRADE_PRO = 2201
+LB_CONNECT_STATUS = 2205
+LB_LOGIN_EMAIL = 2206
+LB_LOGIN_PASSWORD = 2207
+LB_PLUGIN_VERSION = 2208
+LB_CONNECT_STATUS_CONNECTED = 2204
+
+EDITXT_LOGIN_EMAIL = 2300
+EDITXT_LOGIN_PASSWORD = 2301
+
+TEXT_WIDGET_HEIGHT = 10
+
+class UserAreaPathsHeader(c4d.gui.GeUserArea):
+	"""Sketchfab header image."""
+	header_path = os.path.join(Config.PLUGIN_DIRECTORY, 'res', 'Sketchfab_Logo_C4D_x2.png')
+	bmp = c4d.bitmaps.BaseBitmap()
+
+	def GetMinSize(self):
+		self.width = 266
+		self.height = 75
+		return (self.width, self.height)
+
+	def DrawMsg(self, x1, y1, x2, y2, msg):
+		result, ismovie = self.bmp.InitWith(self.header_path)
+		x2 = self.bmp.GetBw()
+		y2 = self.bmp.GetBh()
+
+		if result == c4d.IMAGERESULT_OK:
+			self.DrawBitmap(self.bmp, 0, 0, 266, 75,
+							0, 0, x2, y2, c4d.BMP_NORMALSCALED | c4d.BMP_ALLOWALPHA)
+
+	def Redraw(self):
+		result, ismovie = self.bmp.InitWith(self.header_path)
+		x2 = self.bmp.GetBw()
+		y2 = self.bmp.GetBh()
+
+		if result == c4d.IMAGERESULT_OK:
+			self.DrawBitmap(self.bmp, 0, 0, 266, 75,
+							0, 0, x2, y2, c4d.BMP_NORMALSCALED | c4d.BMP_ALLOWALPHA)
+
+class SketchfabDialogWithLogin(c4d.gui.GeDialog):
+
+	userarea_paths_header = UserAreaPathsHeader()
+
+	redraw_login   = False
+	status_widget  = None
+	is_initialized = False
+	
+	def initialize(self):
+		self.is_initialized = True
+		self.skfb_api.connect_to_sketchfab()
+
+	def draw_header(self):
+		self.GroupBegin(GROUP_HEADER, c4d.BFH_LEFT | c4d.BFV_TOP, 1, 1, "Header")
+
+		self.LayoutFlushGroup(GROUP_HEADER)
+
+		self.AddUserArea(UA_HEADER, c4d.BFH_CENTER)
+		self.AttachUserArea(self.userarea_paths_header, UA_HEADER)
+		self.userarea_paths_header.LayoutChanged()
+
+		self.LayoutChanged(GROUP_HEADER)
+
+		self.GroupEnd()
+
+	def draw_login_ui(self):
+		self.GroupBegin(id=GROUP_LOGIN,
+						flags=c4d.BFH_CENTER,
+						cols=7,
+						rows=1,
+						title="Login",
+						groupflags=c4d.BORDER_NONE | c4d.BFV_GRIDGROUP_EQUALCOLS | c4d.BFV_GRIDGROUP_EQUALROWS)
+
+		self.LayoutFlushGroup(GROUP_LOGIN)
+
+		if not self.is_initialized:
+			self.AddButton(id=BTN_CONNECT_SKETCHFAB, flags=c4d.BFH_CENTER | c4d.BFV_BOTTOM, initw=350, inith=TEXT_WIDGET_HEIGHT, name="Connect to Sketchfab")
+		else:
+			if self.skfb_api.is_user_logged():
+				self.AddStaticText(id=LB_CONNECT_STATUS, flags=c4d.BFH_LEFT, initw=0, inith=0, name=u"Connected as {}".format(self.skfb_api.display_name))
+				self.AddButton(id=BTN_CONNECT_SKETCHFAB, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Logout")
+			else:
+				self.AddStaticText(id=LB_LOGIN_EMAIL, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Email:")
+				self.AddEditText(id=EDITXT_LOGIN_EMAIL, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=350, inith=TEXT_WIDGET_HEIGHT)
+				self.AddStaticText(id=LB_LOGIN_PASSWORD, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Password:")
+				self.AddEditText(id=EDITXT_LOGIN_PASSWORD, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=350, inith=TEXT_WIDGET_HEIGHT, editflags=c4d.EDITTEXT_PASSWORD)
+				self.AddButton(id=BTN_LOGIN, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Login")
+
+				
+
+		# Little hack to get username set in UI
+		self.SetString(LB_CONNECT_STATUS, u"Connected as {}".format(self.skfb_api.display_name))
+		self.LayoutChanged(GROUP_LOGIN)
+
+		self.GroupEnd()
+
+	def refresh(self):
+		self.redraw_login = True
+
+	def refresh_version_ui(self):
+		self.draw_version_ui()
+
+	def msgbox_message(self, text):
+		c4d.gui.MessageDialog(text, type=c4d.GEMB_OK)
+
+	def draw_version_ui(self):
+		self.LayoutFlushGroup(GROUP_FOOTER_VERSION)
+
+		version_state = 'connect to check version'
+		is_latest_version = True
+		if self.skfb_api.latest_release_version:
+			if self.skfb_api.latest_release_version != Config.PLUGIN_VERSION:
+				version_state = 'outdated'
+				is_latest_version = False
+			else:
+				version_state = 'up to date'
+
+		self.AddStaticText(id=LB_PLUGIN_VERSION, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=0, inith=0, name="Plugin version: {} ({})".format(Config.PLUGIN_VERSION, version_state))
+		if not is_latest_version:
+			self.AddButton(id=BTN_UPGRADE_PLUGIN, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=75, inith=TEXT_WIDGET_HEIGHT, name='Upgrade')
+
+		self.LayoutChanged(GROUP_FOOTER_VERSION)
+
+	def draw_upgrade_ui(self):
+		self.GroupBegin(GROUP_UPGRADE_PRO, c4d.BFH_CENTER | c4d.BFV_CENTER, 1, 2, "Upgrade")
+		self.GroupBorderSpace(6, 6, 6, 6)
+		self.LayoutFlushGroup(GROUP_UPGRADE_PRO)
+
+		self.AddStaticText(id=LB_UPGRADE_PRO, flags=c4d.BFH_CENTER | c4d.BFV_TOP,
+						   initw=500,
+						   name=u'Gain full API access to your personal library of 3D models')
+
+		self.AddButton(id=BTN_UPGRADE_PRO, flags=c4d.BFH_CENTER | c4d.BFV_CENTER, initw=150, inith=TEXT_WIDGET_HEIGHT * 2, name="Upgrade To Pro")
+
+		self.LayoutChanged(GROUP_UPGRADE_PRO)
+		self.GroupEnd()
+
+	def draw_footer(self):
+		self.GroupBegin(GROUP_FOOTER, c4d.BFH_FIT | c4d.BFV_CENTER, 3, 1, "Footer")
+
+		self.LayoutFlushGroup(GROUP_FOOTER)
+		self.GroupBorderSpace(6, 2, 6, 6)
+		self.AddSeparatorV(0.0, flags=c4d.BFH_SCALE)
+
+		self.GroupBegin(GROUP_FOOTER_VERSION, c4d.BFH_RIGHT | c4d.BFV_CENTER, 5, 1, "Footer_version")
+		self.draw_version_ui()
+		self.GroupEnd()
+
+		self.LayoutChanged(GROUP_FOOTER)
+
+		self.GroupEnd()
+
+	def draw_contact_ui(self):
+		self.AddButton(id=BTN_UPGRADE_PLUGIN, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=120, inith=TEXT_WIDGET_HEIGHT, name='Documentation')
+		self.AddButton(id=BTN_REPORT, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=120, inith=TEXT_WIDGET_HEIGHT, name='Report an issue')
+
+	def setup_api(self):
+		self.skfb_api = SketchfabApi()
+		self.skfb_api.version_callback = self.refresh_version_ui
+		self.skfb_api.request_callback = self.refresh
+		self.skfb_api.login_callback   = self.draw_login_ui
+		self.skfb_api.msgbox_callback  = self.msgbox_message
+
+	def InitValues(self):
+		self.SetTimer(20)
+		self.SetString(EDITXT_LOGIN_EMAIL,    Cache.get_key('username'))
+
+	def CreateLayout(self):
+		# Initialization
+		self.setup_api()
+
+		# Title
+		self.SetTitle(Config.PLUGIN_TITLE)
+		
+		# Menu
+		self.MenuFlushAll()
+		self.MenuSubBegin("File")
+		self.MenuAddCommand(c4d.IDM_CM_CLOSEWINDOW)
+		self.MenuSubEnd()
+		self.MenuSubBegin("Help")
+		self.MenuAddString(BTN_CREATE_ACCOUNT, "Create an account")
+		self.MenuAddString(BTN_REPORT, "Report an issue")
+		self.MenuAddString(BTN_DOCUMENTATION, "Documentation")
+		self.MenuAddString(BTN_OPEN_CACHE, "Open cache directory")
+		self.MenuSubEnd()
+		self.MenuFinished()
+
+		# Header
+		self.draw_header()
+		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+
+		# Login
+		self.draw_login_ui()
+		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+
+	def common_commands(self, id, msg):
+		if id == BTN_CONNECT_SKETCHFAB:
+			if not self.is_initialized:
+				self.initialize()
+			else:
+				self.skfb_api.logout()
+				self.SetString(EDITXT_LOGIN_EMAIL, Cache.get_key('username'))
+			#self.refresh()
+			self.draw_login_ui()
+
+		if id == BTN_LOGIN:
+			self.skfb_api.login(self.GetString(EDITXT_LOGIN_EMAIL), self.GetString(EDITXT_LOGIN_PASSWORD))
+
+		#if id == BTN_WEB:
+		#	Utilities.ESOpen_website(Config.SKETCHFAB_URL)
+
+		if id == BTN_DOCUMENTATION:
+			webbrowser.open(Config.PLUGIN_LATEST_RELEASE)
+
+		if id == BTN_UPGRADE_PLUGIN:
+			webbrowser.open(Config.PLUGIN_LATEST_RELEASE)
+
+		if id == BTN_CREATE_ACCOUNT:
+			webbrowser.open(Config.SKETCHFAB_SIGNUP)
+
+		if id == BTN_OPEN_CACHE:
+			Utils.open_directory('{}'.format(Config.SKETCHFAB_TEMP_DIR))
+
+		if id == BTN_UPGRADE_PRO:
+			webbrowser.open(Config.SKETCHFAB_PLANS)
+
+		if id == BTN_REPORT:
+			webbrowser.open(Config.SKETCHFAB_REPORT_URL)

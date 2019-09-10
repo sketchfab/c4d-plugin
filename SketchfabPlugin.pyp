@@ -14,6 +14,8 @@
 
 import os
 import sys
+import datetime
+
 
 import c4d
 from c4d import gui, plugins, bitmaps
@@ -23,27 +25,17 @@ from c4d import documents, storage
 from c4d.threading import C4DThread
 
 
-__author__ = "Sketchfab"
-__website__ = "sketchfab.com"
-__sketchfab__ = "http://sketchfab.com"
-__email__ = "support@sketchfab.com"
-__plugin_title__ = "Sketchfab Plugin"
-__version__ = "1.2.0"
-
-__plugin_id__   = 1052778
-__exporter_id__ = 1029390
-
-"""
-__author__ = "Erwin Santacruz"
-__website__ = "http://990adjustments.com"
-__sketchfab__ = "http://sketchfab.com"
-__twitter__ = "@990adjustments"
-__email__ = "hi@990adjustments.com"
-__plugin_title__ = "Sketchfab Exporter"
-__version__ = "1.3.5"
+__author__         = "Sketchfab"
+__website__        = "sketchfab.com"
+__email__          = "support@sketchfab.com"
+__twitter__        = "@sketchfab"
 __copyright_year__ = datetime.datetime.now().year
-__plugin_id__ = 1029390
-"""
+__version__        = "1.2.0"
+
+__importer_id__    = 1052778
+__importer_title__ = "Sketchfab Importer"
+__exporter_id__    = 1029390
+__exporter_title__ = "Sketchfab Exporter"
 
 HELP_TEXT = "Sketchfab importer/exporter for C4D R.20 - v" + __version__
 
@@ -61,9 +53,9 @@ if not SKFB_DEPENDENCIES_PATH in sys.path:
     sys.path.insert(0, SKFB_DEPENDENCIES_PATH)
 
 from sketchfab.ui_importer import *
-from sketchfab.ui_exporter  import *
+from sketchfab.ui_exporter import *
 
-class SketchfabPlugin(plugins.CommandData):
+class SketchfabImporter(plugins.CommandData):
     dialog = None
 
     def Execute(self, doc):
@@ -78,7 +70,7 @@ class SketchfabPlugin(plugins.CommandData):
             self.dialog = SkfbPluginDialog()
 
         return self.dialog.Open(dlgtype=c4d.DLG_TYPE_ASYNC,
-                                pluginid=__plugin_id__,
+                                pluginid=__importer_id__,
                                 defaultw=600,
                                 defaulth=450)
 
@@ -86,7 +78,7 @@ class SketchfabPlugin(plugins.CommandData):
         if self.dialog is None:
             self.dialog = SkfbPluginDialog()
 
-        return self.dialog.Restore(pluginid=__plugin_id__, secret=sec_ref)
+        return self.dialog.Restore(pluginid=__importer_id__, secret=sec_ref)
 
 
 class SketchfabExporter(plugins.CommandData):
@@ -123,7 +115,7 @@ if __name__ == "__main__":
                                   str=__importer_title__,
                                   info=0,
                                   help=HELP_TEXT,
-                                  dat=SketchfabPlugin(),
+                                  dat=SketchfabImporter(),
                                   icon=icon)
 
     plugins.RegisterCommandPlugin(id=__exporter_id__,
