@@ -16,28 +16,10 @@ import os
 import sys
 import datetime
 
-
 import c4d
 from c4d import gui, plugins, bitmaps
-
-#Exporter imports
 from c4d import documents, storage
 from c4d.threading import C4DThread
-
-
-__author__         = "Sketchfab"
-__website__        = "sketchfab.com"
-__email__          = "support@sketchfab.com"
-__twitter__        = "@sketchfab"
-__copyright_year__ = datetime.datetime.now().year
-__version__        = "1.2.0"
-
-__importer_id__    = 1052778
-__importer_title__ = "Sketchfab Importer"
-__exporter_id__    = 1029390
-__exporter_title__ = "Sketchfab Exporter"
-
-HELP_TEXT = "Sketchfab importer/exporter for C4D R.20 - v" + __version__
 
 # Add paths for plugin
 SKETCHFAB_PLUGIN_DIRECTORY = os.path.dirname(__file__)
@@ -52,8 +34,16 @@ if not SKETCHFAB_CODE_DIRECTORY in sys.path:
 if not SKFB_DEPENDENCIES_PATH in sys.path:
     sys.path.insert(0, SKFB_DEPENDENCIES_PATH)
 
+from sketchfab.config import Config
 from sketchfab.ui_importer import *
 from sketchfab.ui_exporter import *
+
+__author__         = Config.PLUGIN_AUTHOR
+__website__        = Config.SKETCHFAB_URL
+__email__          = Config.PLUGIN_EMAIL
+__twitter__        = Config.PLUGIN_TWITTER
+__copyright_year__ = datetime.datetime.now().year
+__version__        = Config.PLUGIN_VERSION
 
 class SketchfabImporter(plugins.CommandData):
     dialog = None
@@ -70,7 +60,7 @@ class SketchfabImporter(plugins.CommandData):
             self.dialog = SkfbPluginDialog()
 
         return self.dialog.Open(dlgtype=c4d.DLG_TYPE_ASYNC,
-                                pluginid=__importer_id__,
+                                pluginid=Config.IMPORTER_ID,
                                 defaultw=600,
                                 defaulth=450)
 
@@ -78,7 +68,7 @@ class SketchfabImporter(plugins.CommandData):
         if self.dialog is None:
             self.dialog = SkfbPluginDialog()
 
-        return self.dialog.Restore(pluginid=__importer_id__, secret=sec_ref)
+        return self.dialog.Restore(pluginid=Config.IMPORTER_ID, secret=sec_ref)
 
 
 class SketchfabExporter(plugins.CommandData):
@@ -96,7 +86,7 @@ class SketchfabExporter(plugins.CommandData):
             self.dialog = MainDialog()
 
         return self.dialog.Open(dlgtype=c4d.DLG_TYPE_ASYNC,
-                                pluginid=__exporter_id__,
+                                pluginid=Config.EXPORTER_ID,
                                 defaultw=600,
                                 defaulth=450)
 
@@ -104,23 +94,28 @@ class SketchfabExporter(plugins.CommandData):
         if self.dialog is None:
             self.dialog = MainDialog()
 
-        return self.dialog.Restore(pluginid=__exporter_id__, secret=sec_ref)
+        return self.dialog.Restore(pluginid=Config.EXPORTER_ID, secret=sec_ref)
+
 
 if __name__ == "__main__":
+
+    # Get the Sketchfab icon
     icon = bitmaps.BaseBitmap()
-    dir, file = os.path.split(__file__)
-    iconPath = os.path.join(dir, "res", "icon.png")
+    iconPath = os.path.join(os.path.split(__file__)[0], "res", "icon.png")
     icon.InitWith(iconPath)
-    plugins.RegisterCommandPlugin(id=__importer_id__,
-                                  str=__importer_title__,
+
+    # Register the importer
+    plugins.RegisterCommandPlugin(id=Config.IMPORTER_ID,
+                                  str=Config.IMPORTER_TITLE,
                                   info=0,
-                                  help=HELP_TEXT,
+                                  help=Config.IMPORTER_HELP,
                                   dat=SketchfabImporter(),
                                   icon=icon)
 
-    plugins.RegisterCommandPlugin(id=__exporter_id__,
-                                  str=__exporter_title__,
+    # Register the exporter
+    plugins.RegisterCommandPlugin(id=Config.EXPORTER_ID,
+                                  str=Config.EXPORTER_TITLE,
                                   info=0,
-                                  help=HELP_TEXT,
+                                  help=Config.EXPORTER_HELP,
                                   dat=SketchfabExporter(),
                                   icon=icon)

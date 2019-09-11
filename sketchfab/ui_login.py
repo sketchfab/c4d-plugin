@@ -4,16 +4,17 @@ qui contient le login et fait les checks de connexion / identification
 """
 
 import os
+import webbrowser
 
 import c4d
+
 from config import Config
 from cache  import Cache
-
-from api import SketchfabApi
+from utils  import Utils
+from api    import SketchfabApi
 
 
 UA_HEADER = 1000
-UA_ICON = 1001
 
 GROUP_HEADER = 2000
 GROUP_LOGIN = 2001
@@ -45,31 +46,30 @@ TEXT_WIDGET_HEIGHT = 10
 
 class UserAreaPathsHeader(c4d.gui.GeUserArea):
 	"""Sketchfab header image."""
-	header_path = os.path.join(Config.PLUGIN_DIRECTORY, 'res', 'Sketchfab_Logo_C4D_x2.png')
-	bmp = c4d.bitmaps.BaseBitmap()
+	img_path = ""
+	bmp      = c4d.bitmaps.BaseBitmap()
+
+	def set_img(self, path):
+		self.img_path = path
 
 	def GetMinSize(self):
-		self.width = 266
+		self.width = 448
 		self.height = 75
 		return (self.width, self.height)
 
 	def DrawMsg(self, x1, y1, x2, y2, msg):
-		result, ismovie = self.bmp.InitWith(self.header_path)
-		x2 = self.bmp.GetBw()
-		y2 = self.bmp.GetBh()
-
-		if result == c4d.IMAGERESULT_OK:
-			self.DrawBitmap(self.bmp, 0, 0, 266, 75,
-							0, 0, x2, y2, c4d.BMP_NORMALSCALED | c4d.BMP_ALLOWALPHA)
+		logo, _  = self.bmp.InitWith(self.img_path)
+		if logo == c4d.IMAGERESULT_OK:
+			self.DrawBitmap(self.bmp, 0, 0, 448, 75,
+							0, 0, self.bmp.GetBw(), self.bmp.GetBh(), 
+							c4d.BMP_NORMALSCALED | c4d.BMP_ALLOWALPHA)
 
 	def Redraw(self):
-		result, ismovie = self.bmp.InitWith(self.header_path)
-		x2 = self.bmp.GetBw()
-		y2 = self.bmp.GetBh()
-
-		if result == c4d.IMAGERESULT_OK:
-			self.DrawBitmap(self.bmp, 0, 0, 266, 75,
-							0, 0, x2, y2, c4d.BMP_NORMALSCALED | c4d.BMP_ALLOWALPHA)
+		logo, _  = self.bmp.InitWith(self.img_path)
+		if logo == c4d.IMAGERESULT_OK:
+			self.DrawBitmap(self.bmp, 0, 0, 448, 75,
+							0, 0, self.bmp.GetBw(), self.bmp.GetBh(), 
+							c4d.BMP_NORMALSCALED | c4d.BMP_ALLOWALPHA)
 
 class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 
@@ -84,8 +84,6 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 		self.skfb_api.connect_to_sketchfab()
 
 	def draw_header(self):
-		self.GroupBegin(GROUP_HEADER, c4d.BFH_LEFT | c4d.BFV_TOP, 1, 1, "Header")
-
 		self.LayoutFlushGroup(GROUP_HEADER)
 
 		self.AddUserArea(UA_HEADER, c4d.BFH_CENTER)
@@ -94,16 +92,8 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 
 		self.LayoutChanged(GROUP_HEADER)
 
-		self.GroupEnd()
-
 	def draw_login_ui(self):
-		self.GroupBegin(id=GROUP_LOGIN,
-						flags=c4d.BFH_CENTER,
-						cols=7,
-						rows=1,
-						title="Login",
-						groupflags=c4d.BORDER_NONE | c4d.BFV_GRIDGROUP_EQUALCOLS | c4d.BFV_GRIDGROUP_EQUALROWS)
-
+		
 		self.LayoutFlushGroup(GROUP_LOGIN)
 
 		if not self.is_initialized:
@@ -119,16 +109,9 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 				self.AddEditText(id=EDITXT_LOGIN_PASSWORD, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=350, inith=TEXT_WIDGET_HEIGHT, editflags=c4d.EDITTEXT_PASSWORD)
 				self.AddButton(id=BTN_LOGIN, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Login")
 
-				
-
 		# Little hack to get username set in UI
 		self.SetString(LB_CONNECT_STATUS, u"Connected as {}".format(self.skfb_api.display_name))
-		self.LayoutChanged(GROUP_LOGIN)
-
-		self.GroupEnd()
-
-	def refresh(self):
-		self.redraw_login = True
+		self.LayoutChanged(GROUP_LOGIN)	
 
 	def refresh_version_ui(self):
 		self.draw_version_ui()
@@ -155,8 +138,7 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 		self.LayoutChanged(GROUP_FOOTER_VERSION)
 
 	def draw_upgrade_ui(self):
-		self.GroupBegin(GROUP_UPGRADE_PRO, c4d.BFH_CENTER | c4d.BFV_CENTER, 1, 2, "Upgrade")
-		self.GroupBorderSpace(6, 6, 6, 6)
+		
 		self.LayoutFlushGroup(GROUP_UPGRADE_PRO)
 
 		self.AddStaticText(id=LB_UPGRADE_PRO, flags=c4d.BFH_CENTER | c4d.BFV_TOP,
@@ -166,9 +148,15 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 		self.AddButton(id=BTN_UPGRADE_PRO, flags=c4d.BFH_CENTER | c4d.BFV_CENTER, initw=150, inith=TEXT_WIDGET_HEIGHT * 2, name="Upgrade To Pro")
 
 		self.LayoutChanged(GROUP_UPGRADE_PRO)
-		self.GroupEnd()
-
+		
 	def draw_footer(self):
+
+		self.GroupBegin(GROUP_UPGRADE_PRO, c4d.BFH_CENTER | c4d.BFV_BOTTOM, 1, 2, "Upgrade")
+		self.GroupBorderSpace(6, 6, 6, 6)
+		#self.draw_upgrade_ui()
+		self.GroupEnd()
+		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+
 		self.GroupBegin(GROUP_FOOTER, c4d.BFH_FIT | c4d.BFV_CENTER, 3, 1, "Footer")
 
 		self.LayoutFlushGroup(GROUP_FOOTER)
@@ -190,20 +178,18 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 	def setup_api(self):
 		self.skfb_api = SketchfabApi()
 		self.skfb_api.version_callback = self.refresh_version_ui
-		self.skfb_api.request_callback = self.refresh
+		self.skfb_api.request_callback = self.draw_login_ui # self.refresh
 		self.skfb_api.login_callback   = self.draw_login_ui
 		self.skfb_api.msgbox_callback  = self.msgbox_message
 
 	def InitValues(self):
 		self.SetTimer(20)
-		self.SetString(EDITXT_LOGIN_EMAIL,    Cache.get_key('username'))
+		self.SetString(EDITXT_LOGIN_EMAIL, Cache.get_key('username'))
+		return True
 
 	def CreateLayout(self):
 		# Initialization
 		self.setup_api()
-
-		# Title
-		self.SetTitle(Config.PLUGIN_TITLE)
 		
 		# Menu
 		self.MenuFlushAll()
@@ -219,12 +205,26 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 		self.MenuFinished()
 
 		# Header
+		self.GroupBegin(GROUP_HEADER, c4d.BFH_LEFT | c4d.BFV_TOP, 1, 1, "Header")
 		self.draw_header()
+		self.GroupEnd()
 		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
 
 		# Login
+		self.GroupBegin(id=GROUP_LOGIN,
+						flags=c4d.BFH_CENTER,
+						cols=7,
+						rows=1,
+						title="Login",
+						groupflags=c4d.BORDER_NONE | c4d.BFV_GRIDGROUP_EQUALCOLS | c4d.BFV_GRIDGROUP_EQUALROWS)
 		self.draw_login_ui()
+		self.GroupEnd()
+
 		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+
+	def AskClose(self):
+		self.is_initialized = False
+		return False
 
 	def common_commands(self, id, msg):
 		if id == BTN_CONNECT_SKETCHFAB:
@@ -233,8 +233,7 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 			else:
 				self.skfb_api.logout()
 				self.SetString(EDITXT_LOGIN_EMAIL, Cache.get_key('username'))
-			#self.refresh()
-			self.draw_login_ui()
+			self.skfb_api.login_callback()
 
 		if id == BTN_LOGIN:
 			self.skfb_api.login(self.GetString(EDITXT_LOGIN_EMAIL), self.GetString(EDITXT_LOGIN_PASSWORD))

@@ -17,38 +17,23 @@ from __future__ import division
 __exporter_id__    = 1029390
 __exporter_title__ = "Sketchfab Exporter"
 
-
-import textwrap
 import webbrowser
 import os
 import datetime
 import requests
+import json
+import zipfile
 
 # C4D modules
 import c4d
 from c4d import gui
 
 # Plugins modules
-from api import SketchfabApi
-from import_gltf import ImportGLTF
+from api    import SketchfabApi
 from config import Config
-from utils import Utils
-
-
-# Modules from the legacy exporter code
-import os
-import json
-import shelve
-import webbrowser
-import zipfile
-import threading
-
-
-
-
+from utils  import Utils
 
 import ui_login
-
 
 
 TXT_MODEL_NAME = 100003
@@ -73,15 +58,7 @@ GROUP_FOUR = 20004
 GROUP_FIVE = 20005
 GROUP_SIX = 20006
 
-UA_HEADER = 30000
-UA_ICON = 30001
-
-
-
-
-
 # Constants
-SETTINGS = "com.990adjustments.SketchfabExport"
 FBX20142 = 1026370
 
 export_options = {
@@ -101,80 +78,10 @@ export_options = {
 	c4d.FBXEXPORT_ASCII: 0
 }
 
-WRITEPATH = os.path.join(c4d.storage.GeGetStartupWritePath(), 'Sketchfab')
-FILEPATH = os.path.join(WRITEPATH, SETTINGS)
-
-if not os.path.exists(WRITEPATH):
-	os.mkdir(WRITEPATH)
-
 # Globals
 g_uploaded = False
 g_error = ""
-g_lastUpdated = ""
-
-
-
-
-
-
-
-
-
-
-
-class Utilities(object):
-	"""Several helper methods."""
-
-	def __init__(self, arg):
-		super(Utilities, self).__init__()
-
-	@staticmethod
-	def ESOpen_website(site):
-		"""Opens Website.
-
-		:param string site: website url
-		"""
-
-		webbrowser.open(site)
-
-	@staticmethod
-	def ESOpen_about():
-		"""Show About information dialog box."""
-
-		"""
-		gui.MessageDialog("{0} v{1}\nCopyright (C) {2} {3}\nAll rights reserved.\n\nWeb:      {4}\nTwitter:  {5}\nEmail:    {6}\n\nThis program comes with ABSOLUTELY NO WARRANTY. For details, please visit\nhttp://www.gnu.org/licenses/gpl.html"
-						  .format(__exporter_title__,
-								  __version__,
-								  __copyright_year__,
-								  __author__,
-								  __website__,
-								  __twitter__,
-								  __email__), c4d.GEMB_OK)
-		"""
-
-	@staticmethod
-	def ESZipdir(path, zipObject, title):
-		"""Adds files to zip object.
-
-		:param string path: path of root directory
-		:param object zipObject: the zip object
-		:param string title: the name of the .fbx file with extension
-		"""
-
-		include = ['tex']
-		for root, dirs, files, in os.walk(path):
-			dirs[:] = [i for i in dirs if i in include]
-			for file in files:
-				if file.startswith('.'):
-					continue
-				if file.endswith('.fbx'.lower()) and file == title:
-					zipObject.write(os.path.join(root, file))
-
-		# zip textures in tex directory
-		texDir = os.path.join(path, 'tex')
-		if os.path.exists(texDir):
-			for f in os.listdir(texDir):
-				zipObject.write(os.path.join(path, 'tex', f))
+g_upload_message = ""
 
 
 class PublishModelThread(c4d.threading.C4DThread):
@@ -236,7 +143,7 @@ class PublishModelThread(c4d.threading.C4DThread):
 		os.chdir(basepath)
 
 		zip = zipfile.ZipFile(archiveName, 'w')
-		Utilities.ESZipdir(dirname, zip, self.title+'.fbx')
+		Utils.zip_c4d_directory(dirname, zip, self.title+'.fbx')
 		zip.close()
 
 		# Connection code
@@ -267,7 +174,7 @@ class PublishModelThread(c4d.threading.C4DThread):
 			# Open website on model page
 			result = gui.MessageDialog("Your model was succesfully uploaded to Sketchfab.com.\nClick OK to open the browser on your model page", c4d.GEMB_OKCANCEL)
 			if result == c4d.GEMB_R_OK:
-				Utilities.ESOpen_website(Config.SKETCHFAB_URL + '/models/' + model_id)
+				webbrowser.open(Config.SKETCHFAB_URL + '/models/' + model_id)
 
 		# Clean up
 		self.cleanup_files(archiveName, exportFile)
@@ -302,61 +209,16 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 	"""Main Dialog Class"""
 
 	def InitValues(self):
-
 		super(MainDialog, self).InitValues()
-
-		# Date of the last upload
-		global g_lastUpdated
-		try:
-			prefs = shelve.open(FILEPATH, 'r')
-			if 'lastUpdate' in prefs:
-				g_lastUpdated = prefs['lastUpdate']
-				self.groupSixWillRedraw()
-			prefs.close()
-		except:
-			pass
-
+		self.userarea_paths_header.set_img(os.path.join(Config.PLUGIN_DIRECTORY, 'res', 'Sketchfab_Logo_exporter.png'))
 		return True
 
-	def createGroupFiveItems(self):
-		self.AddCheckbox(id=CHK_PRIVATE, flags=c4d.BFH_SCALEFIT | c4d.BFH_LEFT,
-						 initw=0, inith=0, name="Private Model (Pro User Only)")
-		self.AddStaticText(id=0, flags=c4d.BFH_LEFT,
-						   initw=0, inith=0, name="Password (optional):    ")
-		self.AddEditText(id=EDITXT_PASSWORD, flags=c4d.BFH_SCALEFIT,
-						 initw=0, inith=0, editflags=c4d.EDITTEXT_PASSWORD)
-		self.AddCheckbox(id=CHK_PUBLISHDRAFT, flags=c4d.BFH_LEFT,
-						 initw=0, inith=0, name="Publish as a draft (not visible to public immediately)")
+	def refresh(self):
+		self.draw_login_ui()
+		self.draw_upload_button()
 
-	def groupFiveWillRedraw(self):
-		self.LayoutFlushGroup(GROUP_FIVE)
-		self.createGroupFiveItems()
-		self.LayoutChanged(GROUP_FIVE)
-
-	def createGroupSixItems(self):
-		self.AddStaticText(id=0, flags=c4d.BFH_LEFT | c4d.BFH_SCALEFIT, initw=0, inith=0, name=g_lastUpdated)
-		self.AddButton(id=BTN_PUBLISH, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=16, name="Publish")
-
-	def groupSixWillRedraw(self):
-		self.LayoutFlushGroup(GROUP_SIX)
-		self.createGroupSixItems()
-		self.LayoutChanged(GROUP_SIX)
-
-	def CreateLayout(self):
-		
-
-		super(MainDialog, self).CreateLayout()
-
+	def draw_model_properties(self):
 		docname = c4d.documents.GetActiveDocument().GetDocumentName()
-
-
-		self.GroupBegin(id=GROUP_TWO,
-						flags=c4d.BFH_SCALEFIT,
-						cols=2,
-						rows=1)
-
-		self.GroupSpace(40, 10)
-		self.GroupBorderSpace(6, 6, 6, 6)
 
 		self.AddStaticText(id=TXT_MODEL_NAME, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Model name:")
 		self.AddEditText(id=EDITXT_MODEL_TITLE, flags=c4d.BFH_SCALEFIT, initw=0, inith=0)
@@ -366,7 +228,6 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 						   initw=0, inith=0, name="Description:")
 		self.AddMultiLineEditText(id=EDITXT_DESCRIPTION, flags=c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
 								  initw=0, inith=100, style=c4d.DR_MULTILINE_WORDWRAP)
-		self.SetString(EDITXT_DESCRIPTION, docname)
 
 		self.AddStaticText(id=TXT_TAGS, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Tags: cinema4d ")
 		self.AddEditText(id=EDITXT_TAGS, flags= c4d.BFH_RIGHT | c4d.BFH_SCALEFIT, initw=0, inith=0)
@@ -374,52 +235,77 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 		self.AddCheckbox(id=CHK_ANIMATION, flags=c4d.BFH_LEFT,
 						 initw=0, inith=0, name="Enable animation")
 
+	def draw_private_options(self):
+		self.LayoutFlushGroup(GROUP_FIVE)
+		self.AddCheckbox(id=CHK_PRIVATE, flags=c4d.BFH_SCALEFIT | c4d.BFH_LEFT,
+						 initw=0, inith=0, name="Private Model (Pro User Only)")
+		self.AddStaticText(id=0, flags=c4d.BFH_LEFT,
+						   initw=0, inith=0, name="Password (optional):    ")
+		self.AddEditText(id=EDITXT_PASSWORD, flags=c4d.BFH_SCALEFIT,
+						 initw=0, inith=0, editflags=c4d.EDITTEXT_PASSWORD)
+		self.AddCheckbox(id=CHK_PUBLISHDRAFT, flags=c4d.BFH_LEFT,
+						 initw=0, inith=0, name="Publish as a draft (not visible to public immediately)")
+		self.LayoutChanged(GROUP_FIVE)
+
+	def draw_upload_button(self):
+		self.LayoutFlushGroup(GROUP_SIX)
+		self.AddStaticText(id=0, flags=c4d.BFH_LEFT | c4d.BFH_SCALEFIT, initw=0, inith=0, name=g_upload_message)
+		self.AddButton(id=BTN_PUBLISH, flags=c4d.BFH_CENTER | c4d.BFV_CENTER, initw=200, inith=38, name="Upload")
+		self.Enable(BTN_PUBLISH, self.skfb_api.is_user_logged())
+		self.LayoutChanged(GROUP_SIX)
+
+	def CreateLayout(self):
+		
+		# Title
+		self.SetTitle(__exporter_title__)
+
+		# Header and inheritance
+		super(MainDialog, self).CreateLayout()
+
+		self.skfb_api.login_callback = self.refresh
+
+		# Model properties
+		self.GroupBegin(id=GROUP_TWO,
+						flags=c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+						cols=2,
+						rows=1)
+		self.GroupSpace(40, 10)
+		self.GroupBorderSpace(6, 6, 6, 6)
+		self.draw_model_properties()
 		self.GroupEnd()
 
 		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
 
-		# Group FIVE
+		# Private options
 		self.GroupBegin(id=GROUP_FIVE,
 						flags=c4d.BFH_SCALEFIT | c4d.BFV_BOTTOM,
 						cols=3,
 						rows=1)
-
 		self.GroupSpace(4, 4)
-		self.GroupBorderSpace(6, 6, 6, 6)
-
-		self.groupFiveWillRedraw()
-
+		self.GroupBorderSpace(6, 6, 6, 2)
+		self.draw_private_options()
 		self.GroupEnd()
 
-		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
-
+		# Upload button
 		self.GroupBegin(id=GROUP_SIX,
-						flags=c4d.BFH_SCALEFIT | c4d.BFV_BOTTOM,
-						cols=2,
+						flags=c4d.BFH_SCALEFIT | c4d.BFV_CENTER | c4d.BFH_CENTER,
+						cols=1,
 						rows=1)
-
 		self.GroupSpace(4, 4)
-		self.GroupBorderSpace(6, 6, 6, 6)
-
-		self.groupSixWillRedraw()
-
+		self.GroupBorderSpace(6, 2, 6, 6)
+		self.draw_upload_button()
 		self.GroupEnd()
 
-		self.GroupEnd()
+		#self.GroupEnd()
 
 		self.draw_footer()
 
-
 		return True
-
 
 	def CoreMessage(self, id, msg):
 		"""Override this function if you want to react
 		to C4D core messages. The original message is stored in msg.
 		"""
-
-		global g_lastUpdated
-
 		if id == __exporter_id__:
 			c4d.StatusSetBar(100)
 
@@ -427,31 +313,15 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 			# t = time_start.strftime("%a %b %d %I:%M %p")
 			t = time_start.strftime("%c")
 
-			try:
-				prefs = shelve.open(FILEPATH, 'c')
-			except Exception as err:
-				print("\nUnable to load preferences. Reason: ".format(err))
-
 			if g_uploaded:
 				print("Your model was succesfully uploaded to Sketchfab.com.")
-
 				print("\nUpload ended on {0}".format(t))
 
-				g_lastUpdated = "Successful Upload on {0}".format(t)
-
-				if prefs:
-					prefs['lastUpdate'] = g_lastUpdated
-					prefs.close()
 			else:
 				gui.MessageDialog("Unable to upload model to Sketchfab.com. Reason: {0}".format(g_error), c4d.GEMB_OK)
 				print("Unable to upload model to Sketchfab.com. Reason: {0}".format(g_error))
-				g_lastUpdated = "Upload failed on {0}".format(t)
 
-				if prefs:
-					prefs['lastUpdate'] = g_lastUpdated
-					prefs.close()
-
-			self.groupSixWillRedraw()
+			self.draw_upload_button()
 			self.Enable(BTN_PUBLISH, True)
 			self.SetTitle("Upload status")
 			c4d.StatusClear()
@@ -461,8 +331,6 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 	def Command(self, id, msg):
 
 		self.common_commands(id, msg)
-
-		global g_lastUpdated
 
 		if id == BTN_THUMB_SRC_PATH:
 			selected = c4d.storage.LoadDialog(type=c4d.FILESELECTTYPE_ANYTHING)
@@ -475,23 +343,23 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 			if self.GetBool(CHK_PRIVATE):
 				self.Enable(EDITXT_PASSWORD, True)
 			else:
-				self.groupFiveWillRedraw()
+				self.draw_private_options()
 				self.Enable(EDITXT_PASSWORD, False)
 
 		if id == BTN_PUBLISH:
 			c4d.StatusSetBar(50)
-			g_lastUpdated = "Working it..."
-			self.groupSixWillRedraw()
+			g_upload_message = "Uploading..."
+			self.draw_upload_button()
 
 			data = {}
 			activeDoc = c4d.documents.GetActiveDocument()
 			activeDocPath = activeDoc.GetDocumentPath()
 			if not os.path.exists(activeDocPath):
-				path = c4d.storage.SaveDialog(type=c4d.FILESELECTTYPE_ANYTHING, title="Please save your scene", force_suffix="c4d")
-				result = c4d.documents.SaveDocument(activeDoc,path, c4d.SAVEDOCUMENTFLAGS_0, c4d.FORMAT_C4DEXPORT)
+				path = c4d.storage.SaveDialog(type=c4d.FILESELECTTYPE_ANYTHING, title="Please save your .c4d scene", force_suffix="c4d")
+				result = c4d.documents.SaveDocument(activeDoc, path, c4d.SAVEDOCUMENTFLAGS_DONTADDTORECENTLIST, c4d.FORMAT_C4DEXPORT)
 				c4d.documents.LoadFile(path)
 				if not result:
-					gui.MessageDialog("Please save your scene first.", c4d.GEMB_OK)
+					gui.MessageDialog("Please save your .c4d scene first.", c4d.GEMB_OK)
 					c4d.StatusClear()
 					return False
 
@@ -500,7 +368,7 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 			activeDocPath = activeDoc.GetDocumentPath()
 
 			self.Enable(BTN_PUBLISH, False)
-			self.SetTitle("{0} publishing model...".format(__exporter_title__))
+			self.SetTitle("{0} uploading model...".format(__exporter_title__))
 
 			title = self.GetString(EDITXT_MODEL_TITLE)
 			description = self.GetString(EDITXT_DESCRIPTION)

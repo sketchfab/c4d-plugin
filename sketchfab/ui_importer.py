@@ -17,8 +17,6 @@ from __future__ import division
 __importer_id__    = 1052778
 __importer_title__ = "Sketchfab Importer"
 
-
-
 import textwrap
 import webbrowser
 import os
@@ -30,22 +28,12 @@ from c4d import gui
 # Plugins modules
 from import_gltf import ImportGLTF
 from config import Config
-
 from utils import Utils
-
-
-
 
 import ui_login
 
 
-
-
-
-
-
 # enums
-
 UI_PROGRESSBAR = 1002
 
 # Groups
@@ -54,9 +42,6 @@ GROUP_FILTERS = 24004
 GROUP_RESULTS_SCROLL = 2006
 GROUP_RESULTS = 2007
 GROUP_PREVNEXT = 2009
-
-
-
 # Model window
 GROUP_MODEL_WINDOW = 2014
 GROUP_MODEL_INFO = 2015
@@ -70,23 +55,11 @@ BTN_IMPORT = 2102
 BTN_NEXT_PAGE = 2103
 BTN_PREV_PAGE = 2104
 
-BTN_NEXT_PAGE = 2106
-BTN_PREV_PAGE = 2107
-
-
-
-
-
 # Labels
 LB_SEARCH_QUERY = 2200
-
 LB_FACE_COUNT = 2202
 LB_SORT_BY = 2203
-
-
-
-LB_RESULT_NAME_START = 2209  # + 24 since 24 results on page
-
+LB_RESULT_NAME_START = 2209 
 # Model Window
 LB_MODEL_NAME = 2210
 LB_MODEL_AUTHOR = 2211
@@ -95,8 +68,6 @@ LB_MODEL_VERTEX_COUNT = 2213
 LB_MODEL_FACE_COUNT = 2214
 LB_MODEL_ANIMATION_COUNT = 2215
 LB_MODEL_STEP = 2216
-
-# Editable
 
 EDITXT_SEARCH_QUERY = 2302
 
@@ -125,7 +96,6 @@ resultContainerIDStart = 2600  # + 24 since 24 results on page
 TEXT_WIDGET_HEIGHT = 10
 
 
-
 class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 
 	redraw_results = False
@@ -134,17 +104,18 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		super(SkfbPluginDialog, self).InitValues()
 		self.model_dialog = None
 		self.SetBool(CHK_IS_STAFFPICK, True)
+		self.userarea_paths_header.set_img(os.path.join(Config.PLUGIN_DIRECTORY, 'res', 'Sketchfab_Logo_importer.png'))
 		return True
 
 	def refresh(self):
-		self.redraw_login = True
+		self.redraw_login   = True
 		self.redraw_results = True
 
 	def refresh_login_ui(self):
 		self.draw_login_ui()
 		self.draw_search_ui()
-		if self.model_dialog:
-			self.model_dialog.refresh_window()
+		#if self.model_dialog:
+		#	self.model_dialog.refresh_window()
 
 	def Timer(self, msg):
 		if self.redraw_results:
@@ -155,16 +126,18 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 			self.redraw_login = False
 
 	def CreateLayout(self):
+
+		# Title
+		self.SetTitle(__importer_title__)
 		
 		# Main UI
 		super(SkfbPluginDialog, self).CreateLayout()
+		self.skfb_api.request_callback = self.refresh
+		self.skfb_api.login_callback   = self.refresh_login_ui
 
 		# Toggle CHK_My8models
 		if self.is_initialized:
 			self.Enable(CHK_MY_MODELS, self.skfb_api.is_user_logged())
-
-		self.skfb_api.request_callback = self.refresh
-		self.skfb_api.login_callback   = self.refresh_login_ui
 
 		self.GroupBegin(id=GROUP_QUERY,
 						flags=c4d.BFH_CENTER | c4d.BFV_FIT,
@@ -195,22 +168,18 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		self.GroupBegin(GROUP_PREVNEXT, c4d.BFH_FIT | c4d.BFV_CENTER, 3, 1, "Prevnext")
 		self.GroupBorderSpace(4, 2, 4, 2)
 		self.draw_prev_next()
-
 		self.GroupEnd()
 
 		self.ScrollGroupBegin(GROUP_RESULTS_SCROLL, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, c4d.SCROLLGROUP_VERT | c4d.SCROLLGROUP_HORIZ | c4d.SCROLLGROUP_AUTOHORIZ | c4d.SCROLLGROUP_AUTOVERT, 200, 200)
 		self.GroupBegin(GROUP_RESULTS, c4d.BFH_SCALEFIT | c4d.BFV_TOP, 6, 4, "Results", c4d.BFV_GRIDGROUP_EQUALCOLS | c4d.BFV_GRIDGROUP_EQUALROWS)
 		self.GroupBorderSpace(6, 2, 6, 2)
 		self.draw_results_ui()
-
 		self.GroupEnd()
 		self.GroupEnd()
-
 		
 		if self.GetBool(CHK_MY_MODELS) and not self.skfb_api.is_user_pro:
 			self.draw_upgrade_ui()
-			self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
-
+			
 		self.draw_footer()
 
 		self.trigger_default_search()
@@ -275,7 +244,8 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 	def resultGroupWillRedraw(self):
 		self.draw_prev_next()
 		self.draw_results_ui()
-		self.draw_upgrade_ui()
+		if self.GetBool(CHK_MY_MODELS) and not self.skfb_api.is_user_pro:
+			self.draw_upgrade_ui()
 
 	def draw_results_ui(self):
 		self.LayoutFlushGroup(GROUP_RESULTS)
@@ -313,8 +283,6 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		self.Enable(BTN_NEXT_PAGE, self.skfb_api.has_next())
 
 		self.redraw_results = False
-
-	
 
 	def draw_prev_next(self):
 		self.LayoutFlushGroup(GROUP_PREVNEXT)
@@ -394,30 +362,19 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 				if self.IsActive(EDITXT_SEARCH_QUERY):
 					trigger_search = True
 
-		if id == BTN_SEARCH:
-			trigger_search = True
-
-		if id == CBOX_CATEGORY:
-			trigger_search = True
-
-		if id == CBOX_SORT_BY:
-			trigger_search = True
-
-		if id == CBOX_FACE_COUNT:
-			trigger_search = True
-
-		if id == CHK_IS_PBR:
-			trigger_search = True
-
-		if id == CHK_IS_ANIMATED:
-			trigger_search = True
-
-		if id == CHK_IS_STAFFPICK:
+		if id in [
+			BTN_SEARCH, 
+			CBOX_CATEGORY, 
+			CBOX_SORT_BY,
+			CBOX_FACE_COUNT,
+			CHK_IS_PBR, 
+			CHK_IS_ANIMATED, 
+			CHK_IS_STAFFPICK, 
+			CHK_MY_MODELS]:
 			trigger_search = True
 
 		if id == CHK_MY_MODELS:
 			self.reset_filters(self.GetBool(CHK_MY_MODELS))
-			trigger_search = True
 
 		if trigger_search:
 			self.trigger_search()
@@ -443,10 +400,6 @@ class SkfbModelDialog(gui.GeDialog):
 		self.step = ''
 		self.status = ''
 		self.importer = None
-
-	def InitValues(self):
-		super(SkfbModelDialog, self).InitValues()
-		return True
 
 	def SetModelInfo(self, skfb_model, api):
 		self.skfb_model = skfb_model

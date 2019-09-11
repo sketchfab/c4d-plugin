@@ -99,7 +99,6 @@ class SketchfabApi:
         access_token = Cache.get_key('access_token')
         self.access_token = access_token
         self.build_headers()
-        self.request_user_info()
 
     def login(self, email, password):
         self.email = email
@@ -323,17 +322,6 @@ class ThreadedRequest(C4DThread):
     def Main(self):
         requests.get(self.url, headers=self.headers, hooks={'response': self.callback})
 
-# class ThreadedImporter(C4DThread):
-#     def __init__(self, filepath, uid, progress_callback=None):
-#         C4DThread.__init__(self)
-#         self.filepath = filepath
-#         self.uid = uid
-#         self.importer = ImportGLTF(progress_callback)
-
-#     def Main(self):
-#         self.importer.run(self.filepath, self.uid)
-
-
 class ThreadedModelDownload(C4DThread):
     def __init__(self, api, uid, import_callback):
         C4DThread.__init__(self)
@@ -550,4 +538,5 @@ class ThreadedSearch(C4DThread):
 
         self.skfb_api.search_results['current'][uid].preview_path = preview_path
         self.skfb_api.search_results['current'][uid].thumbnail_path = thumbnail_path
-        self.skfb_api.request_callback()
+        if self.skfb_api.request_callback:
+        	self.skfb_api.request_callback()

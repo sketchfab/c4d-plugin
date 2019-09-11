@@ -18,8 +18,19 @@ import c4d
 from c4d import storage
 
 class Config:
-    PLUGIN_TITLE = "Sketchfab Plugin"
+
     PLUGIN_VERSION = "1.1.0"
+    PLUGIN_TITLE   = "Sketchfab Plugin"
+    PLUGIN_AUTHOR  = "Sketchfab"
+    PLUGIN_TWITTER = "@sketchfab"
+    PLUGIN_EMAIL   = "support@sketchfab.com"
+    IMPORTER_ID    = 1052778
+    IMPORTER_TITLE = "Sketchfab Importer"
+    IMPORTER_HELP  = "Import a model from Sketchfab"
+    EXPORTER_ID    = 1029390
+    EXPORTER_TITLE = "Sketchfab Exporter"
+    EXPORTER_HELP  = "Export a model to Sketchfab"
+
     PLUGIN_DIRECTORY = os.path.dirname(os.path.dirname(__file__))
     MODEL_PLACEHOLDER_PATH = os.path.join(PLUGIN_DIRECTORY, 'res', 'modelPlaceholder.png')
 
