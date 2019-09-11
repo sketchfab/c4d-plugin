@@ -12,7 +12,7 @@
 # cmd /c mklink /d 'C:\Program Files\MAXON\Cinema 4D R20\plugins\c4d-plugin/' C:\Users\Norgeotloic\Documents\TOTOTO\releases\c4d-plugin-win\
 
 # Get the plugin version
-version=$(cat SketchfabPlugin.pyp | grep '__version__ = ' | grep -o '".*"' | tr -d '"')
+version=$(cat sketchfab/config.py | grep 'PLUGIN_VERSION = ' | grep -o '".*"' | tr -d '"')
 
 # If requested, apply the patch on Khronos' submodule (glTF-Blender-IO/)
 if [[ $* == *--patch* ]]
@@ -23,22 +23,22 @@ then
   cp -r ./addons/io_scene_gltf2/io/ ../gltfio/
   cd ../
 else
-  echo "Creating releases"
+  echo "Creating releases for version $version"
   # Create the ZIP files for release
   mkdir -p releases
   rm -rf releases/*
   # OSX
-  mkdir releases/c4d-plugin-osx-$version/
-  cp -r SketchfabPlugin.pyp res sketchfab gltfio releases/c4d-plugin-osx-$version/
-  cp -r dependencies/OSX/ releases/c4d-plugin-osx-$version/dependencies
+  mkdir releases/sketchfab-osx-$version/
+  cp -r SketchfabPlugin.pyp res sketchfab gltfio releases/sketchfab-osx-$version/
+  cp -r dependencies/OSX/ releases/sketchfab-osx-$version/dependencies
   # WINDOWS
-  mkdir releases/c4d-plugin-win-$version/
-  cp -r SketchfabPlugin.pyp res sketchfab gltfio releases/c4d-plugin-win-$version/
-  cp -r dependencies/WIN/ releases/c4d-plugin-win-$version/dependencies
+  mkdir releases/sketchfab-win-$version/
+  cp -r SketchfabPlugin.pyp res sketchfab gltfio releases/sketchfab-win-$version/
+  cp -r dependencies/WIN/ releases/sketchfab-win-$version/dependencies
   # Zip everything
   cd releases/
-  zip -r -q c4d-plugin-osx-$version.zip c4d-plugin-osx-$version/
-  zip -r -q c4d-plugin-win-$version.zip c4d-plugin-win-$version/
+  zip -r -q sketchfab-osx-$version.zip sketchfab-osx-$version/
+  zip -r -q sketchfab-win-$version.zip sketchfab-win-$version/
   cd ..
   echo "Releases available in $(pwd)/releases/"
 fi

@@ -1,14 +1,123 @@
-# Sketchfab Plugin for Cinema4D (Beta)
+# Sketchfab Cinema4D Plugin
 
-_This plugin is still in a BETA version, so please make sure to save your documents before using it_
+**Directly import and export models from and to Sketchfab in Cinema4D (R.20 or later)**
 
-_Only compatible with Cinema4D R.20_
+* [Installation](#installation)
+* [Login](#login)
+* [Import from Sketchfab](#import-a-model-from-sketchfab)
+* [Export to Sketchfab](#export-a-model-to-sketchfab)
+* [Known issues](#known-issues)
+* [Report an issue](#report-an-issue)
+* [Addon development](#addon-development)
+
+*Based on parsing code from  [Khronos Group](https://github.com/KhronosGroup) - [glTF-Blender-IO](https://github.com/KhronosGroup/glTF-Blender-IO)*
 
 ## Installation
 
-Go to the [latest release page](https://github.com/sketchfab/c4d-plugin/releases/latest) to download the plugin and follow the installation instructions.
+First download the **sketchfab-x-y-z.zip** file attached to the [latest release](https://github.com/sketchfab/c4d-plugin/releases/latest) according to your O.S., and extract its content into a directory.
 
-## Development
+**Note**: It is recommended to rename the directory into "Sketchfab", as this will allow the plugin to be displayed under the name "Sketchfab" instead of "sketchfab-win-1.2.0" for instance.
+
+To install the plugin, you should copy the newly extracted directory into one of the folders below (you can also find the **plugins** folder by using the **Open Preferences Folder** in the **Edit -> Preferences** menu).
+
+#### Maxon Installation directory (RECOMMENDED)
+
+*You might need admin rights to write in /Applications or C:/Program Files*
+
+* Windows: C:\Program Files\MAXON\CINEMA 4D R20\plugins
+* OS X:    /Applications/MAXON/CINEMA 4D R20/plugins
+
+#### User preferences directory
+
+* /Users/UserName/Library/Preferences/MAXON/CINEMA 4D R20/plugins
+
+Upon restrting Cinema 4D, the Sketchfab plugin should be available under the "plugins" menu:
+
+![menu](https://user-images.githubusercontent.com/52042414/65263442-f9e2ed80-db0c-11e9-96ba-76e7edab1c1d.png)
+
+## Login
+
+The login process (mandatory to import or export models) should be straightforward: type in the email adress associated with your Sketchfab account as well as your password in the login form:
+
+![login](https://user-images.githubusercontent.com/52042414/65263673-652cbf80-db0d-11e9-8204-ceca46b6813e.png)
+
+Your Sketchfab username should then be displayed upon successful login, and you will gain access to the full import and export capabilities of the addon. 
+
+Please note that your login credentials are stored in a temporary file on your local machine (to avoid repeating the login process multiple times). 
+You can clear it by simply logging out of your Sketchfab account through the **Log Out** button.
+
+
+## Import a model from Sketchfab
+
+*Please note that all downloadable models are licensed under specific licenses: make sure to follow the different [Creative Commons licensing schemes](https://help.sketchfab.com/hc/en-us/articles/201368589-Downloading-Models#licenses).*
+
+Once logged in into the **Sketchfab Importer**, you should be able to easily import any downloadable model from Sketchfab. 
+
+To do so, just run a search query and adapt the search filters:
+
+![Screenshot-1](https://user-images.githubusercontent.com/4066133/60028977-90d01300-96a0-11e9-8892-d228a7943d0d.JPG)
+
+
+Note that **PRO** users can use the **My Models** checkbox to import any published model from their own library (even the private ones).
+
+You can navigate through the models available for download with the **Previous** and **Next** buttons, and inspect a model before importing it by selecting an icon:
+
+![Screenshot-2](https://user-images.githubusercontent.com/4066133/60028983-93cb0380-96a0-11e9-8f98-b9f257bdb079.JPG)
+
+Selecting the "Import Model" button will download the current asset and import it into your C4D scene
+
+![Screenshot-3](https://user-images.githubusercontent.com/4066133/60028986-96c5f400-96a0-11e9-887f-395c957cf150.JPG)
+
+Please note that as Sketchfab models come from many different sources, the imported model might not be scaled correctly upon import: try rescaling it after having it selected in the hierarchy if you can see the object upon import !
+
+## Export a model to Sketchfab
+
+Exporting should also be straightforward:
+
+Once you have your scene file ready, open the **Exporter** and enter a title, description, and tags (separated by spaces) for your model. You can then choose to publish the model later with the "Draft" checkbox, and PRO users can also set their model as private, and optionally protect them with a password ([here](https://sketchfab.com/plans) are more information about the different plans available on Sketchfab).
+
+![exporter](https://user-images.githubusercontent.com/52042414/65264692-74ad0800-db0f-11e9-8ae8-1c300764b5cb.png)
+
+Hitting the **Upload** button will process your model, and a pop-up should appear upon success, with a link to the model on your Sketchfab profile.
+
+Please note that although the uploading process can be quite fast (as it entirely depends upon your internet connection), the model will still need to process, and you will be available to monitor their status on the "Upload" tab of your profile:
+
+![Uploads](https://user-images.githubusercontent.com/52042414/65265316-edf92a80-db10-11e9-8d1d-0c3235cea640.png)
+
+## Known Issues
+
+If none of the following description matches your problem, please feel free to [report an issue](#report-an-issue).
+
+#### Animation is not supported (some models might not look good)
+
+Animation data is not yet imported so models might look bad because their objects transforms are not correct, or their pose is not the expected one. Animation import is planned and will come in a futureversion.
+
+#### Model has material using several UV layers
+
+Mutli-UV models are not *yet* supported by this plugin, so models having these properties can look messed up.
+
+#### Sketchfab <-> Cinema4D material conversion
+
+Cinema4D and Sketchfab (glTF) are both using PBR materials but using two different models (different channels and material properties), which may lead to different material settings between Sketchfab and Cinema 4D.
+
+In particular, **metalness and roughness maps are not exported yet**.
+
+If you notice important differences, [reporting the issue](#report-an-issue) can help us investigate, and maybe find a way to solve the problem!
+
+#### Vertex colors
+
+Some models are using vertex colors, and this data is imported but not used by default. The reason is that vertex colors are exported for editing purpose but they are not always used for final render.
+In order to make Cinema4D use this data for a model, you need to edit its material(s) and enable both the _COLOR_ channel and the _Vertex Color_ layer in Reflectance channel.
+After this, vertex colors should be used for render.
+
+## Report an issue
+
+If you feel like you've encountered a bug not listed in the [known issues](#known-issues), or that the plugin lacks an important feature, you can contact us through [Sketchfab's Help Center](https://help.sketchfab.com/hc/en-us/requests/new?type=exporters&subject=Cinema4D+Plugin) (or directly from the plugin through the **Help -> Report an issue** menu).
+
+To help us track a possible error, please try to append the logs of Cinema4D Python console in your message (available in the **Script -> Console** menu)
+
+
+## Addon development
 
 To prepare a development version of the plugin, you'll first have to clone this repository and update the [Khronos glTF IO](https://github.com/KhronosGroup/glTF-Blender-IO) submodule:
 ```sh
@@ -22,22 +131,13 @@ You'll then need (only once) to patch the code from the Khronos submodule with t
 ./build.sh --patch
 ```
 
+or (on Windows) 
+
+```sh
+bash.exe build.sh --patch
+```
+
 The final releases can then be built by executing build.sh without arguments:
 ```
 ./build.sh
 ```
-
-## Report an issue
-
-Be sure to check the [release notes](https://github.com/sketchfab/c4d-plugin/releases/latest) for known issues or limitations of the plugin.
-
-You can also report the issue using the [regular channel](https://help.sketchfab.com/hc/en-us/requests/new?type=exporters&subject=Cinema4D+Plugin) or directly from the plugin in **Help -> Report an issue**
-
-
-## Sources and dependencies
-
-The plugin uses glTF parsing code from [Khronos' glTF-Blender-IO](https://github.com/KhronosGroup/glTF-Blender-IO) (Apache 2.0)
-
-### Dependencies
-* **PIL** _is used to resize and crop Sketchfab models thumbnails_
-* **Requests** _is used to communicate with Sketchfab API_
