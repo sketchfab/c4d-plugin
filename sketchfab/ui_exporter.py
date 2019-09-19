@@ -22,7 +22,8 @@ import os
 import datetime
 import requests
 import json
-import zipfile
+import tempfile
+import shutil
 
 # C4D modules
 import c4d
@@ -62,7 +63,7 @@ GROUP_SIX = 20006
 FBX20142 = 1026370
 
 export_options = {
-	c4d.FBXEXPORT_LIGHTS: 1,
+	c4d.FBXEXPORT_LIGHTS: 0,
 	c4d.FBXEXPORT_CAMERAS: 0,
 	c4d.FBXEXPORT_SPLINES: 1,
 	# Geometry and Materials
@@ -100,74 +101,60 @@ class PublishModelThread(c4d.threading.C4DThread):
 		global g_uploaded
 		global g_error
 
-		# Need to work on this some more
-		time_start = datetime.datetime.now()
-		# t = time_start.strftime("%a %b %d %I:%M %p")
-		t = time_start.strftime("%c")
-
-		print("\nUpload started on {0}".format(t))
-		print("Exporting...\n")
-
-		exportFile = os.path.join(self.activeDocPath, self.title + '.fbx')
-
+		# Create a temporary directory to export everything in
+		exportDirectory = tempfile.mkdtemp()
+		zipName         = os.path.join(self.activeDocPath, self.title)
+		
+		# Save the current FBX export options
 		options = self.get_fbxexport_options()
-		backup_options = {}
-
 		export_options[c4d.FBXEXPORT_TRACKS] = self.enable_animation
 		export_options[c4d.FBXEXPORT_BAKE_ALL_FRAMES] = self.enable_animation
-
+		backup_options = {}
 		for key in export_options:
 			if options[key] != export_options[key]:
 				backup_options[key] = options[key]
-
 			options[key] = export_options[key]
 
-		# FBX Export
-		c4d.documents.SaveDocument(self.activeDoc, exportFile,
+		# Export the FBX file
+		exportFBX = os.path.join(exportDirectory, self.title + '.fbx')
+		c4d.documents.SaveDocument(self.activeDoc, exportFBX,
 							   c4d.SAVEDOCUMENTFLAGS_DONTADDTORECENTLIST, FBX20142)
+		if not os.path.exists(exportFBX):
+			g_uploaded = False
+			g_error = "FBX export failed."
+			c4d.SpecialEventAdd(__exporter_id__)
+			return False
+		print("FBX export successful.")
 
-		# restore options
+		# Restore the old FBX export options
 		for key in backup_options:
 			options[key] = backup_options[key]
 
-		if not os.path.exists(exportFile):
-			g_uploaded = False
-			g_error = "Export failed."
-			c4d.SpecialEventAdd(__exporter_id__)
-			return False
+		# Zip the temporary directory content
+		shutil.make_archive(zipName, 'zip', exportDirectory)
 
-		print("Export successful.")
-
-		basepath, dirname = os.path.split(self.activeDocPath)
-		archiveName = self.title + '.zip'
-		os.chdir(basepath)
-
-		zip = zipfile.ZipFile(archiveName, 'w')
-		Utils.zip_c4d_directory(dirname, zip, self.title+'.fbx')
-		zip.close()
-
-		# Connection code
-		# Begin upload
-		print("Uploading...\n")
-
+		# Do the request
 		_headers = self.skfb_api.headers
-
 		try:
 			r = requests.post(
 				Config.SKETCHFAB_MODEL,
 				data    = self.data,
-				files   = {"modelFile": open(archiveName, 'rb')},
+				files   = {"modelFile": open(zipName + ".zip", 'rb')},
 				headers = _headers
 			)
 		except requests.exceptions.RequestException as e:
 			g_uploaded = False
-			g_error = error
+			g_error = e
 			return 
 
 		result = r.json()
 
 		if r.status_code != requests.codes.created:
-			g_error = "Invalid response from server."
+			g_error = "Invalid response from server: %d." % r.status_code
+			# Was the file too big ?
+			if "size" in r.text:
+				print("request:")
+				print(r.text)
 		else:
 			model_id = result["uid"]
 			g_uploaded = True
@@ -177,8 +164,10 @@ class PublishModelThread(c4d.threading.C4DThread):
 				webbrowser.open(Config.SKETCHFAB_URL + '/models/' + model_id)
 
 		# Clean up
-		self.cleanup_files(archiveName, exportFile)
+		self.cleanup_files([zipName + ".zip", exportDirectory])
 		c4d.SpecialEventAdd(__exporter_id__)
+			
+		return
 
 	def get_fbxexport_options(self):
 		''' Set the good options for fbx export to Sketchfab '''
@@ -191,19 +180,17 @@ class PublishModelThread(c4d.threading.C4DThread):
 		if fbxplugin.Message(c4d.MSG_RETRIEVEPRIVATEDATA, reply):
 				return reply.get('imexporter')
 
-	def cleanup_files(self, archive_name=None, export_file=None):
-		if archive_name and os.path.exists(archive_name):
-			try:
-				os.remove(archive_name)
-			except Exception:
-				print("Unable to remove file {0}".format(archive_name))
-
-		if export_file and os.path.exists(export_file):
-			try:
-				os.remove(export_file)
-			except Exception:
-				print("Unable to remove file {0}".format(export_file))
-
+	def cleanup_files(self, files):
+		for f in files:
+			if os.path.exists(f):
+				try:
+					if os.path.isdir(f):
+						shutil.rmtree(f)
+					else:
+						os.remove(f)
+				except Exception:
+					print("Unable to remove file {0}".format(f))
+		
 
 class MainDialog(ui_login.SketchfabDialogWithLogin):
 	"""Main Dialog Class"""
@@ -309,14 +296,8 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 		if id == __exporter_id__:
 			c4d.StatusSetBar(100)
 
-			time_start = datetime.datetime.now()
-			# t = time_start.strftime("%a %b %d %I:%M %p")
-			t = time_start.strftime("%c")
-
 			if g_uploaded:
 				print("Your model was succesfully uploaded to Sketchfab.com.")
-				print("\nUpload ended on {0}".format(t))
-
 			else:
 				gui.MessageDialog("Unable to upload model to Sketchfab.com. Reason: {0}".format(g_error), c4d.GEMB_OK)
 				print("Unable to upload model to Sketchfab.com. Reason: {0}".format(g_error))
@@ -351,7 +332,6 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 			g_upload_message = "Uploading..."
 			self.draw_upload_button()
 
-			data = {}
 			activeDoc = c4d.documents.GetActiveDocument()
 			activeDocPath = activeDoc.GetDocumentPath()
 			if not os.path.exists(activeDocPath):
@@ -402,26 +382,22 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 				return False
 
 			# populate data
+			data = {
+				"source": "cinema4d",
+				"tags": "cinema4d ",
+				"title": title
+			}
+			data['isPublished'] = auto_publish
 			if len(description) != 0:
 				data['description'] = description
-
-			data['tags'] = 'cinema4d '
 			if len(tags) != 0:
-				data['tags'] += " ".join(tags.split(" ")[:41])
-
-			data['title'] = title
-
+				data['tags'] += " ".join(tags.split(" ")[:41]).strip()
 			if private:
 				data['private'] = private
-
 			if private and len(password) != 0:
 				data['password'] = password
 
-			# Start Multithread operations
-			# pass on data
-			data['source'] = 'cinema4d'
-			data['isPublished'] = auto_publish
-
+			# Start Multithread operations		
 			self.publish = PublishModelThread(self.skfb_api, data, title, activeDoc, activeDocPath, enable_animation)
 			self.publish.Start()
 			self.publish.Wait(True)
