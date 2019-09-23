@@ -57,6 +57,7 @@ class ImportGLTF(plugins.ObjectData):
         self.gltf_materials = []
         self.is_done = False
         self.has_vertex_colors = False
+        self.has_problematic_polygons = False
 
     def run(self, filepath, uid=None):
         self.model_dir = os.path.split(filepath)[0]
@@ -64,6 +65,13 @@ class ImportGLTF(plugins.ObjectData):
 
         gltf = glTFImporter(filepath)
         success, txt = gltf.read()
+
+        if not self.has_polygons(gltf):
+            msg = "No polygons detected in the model.\nPoints cloud cannot be imported into Cinema 4D.\nAborting."
+            gui.MessageDialog(text=msg, type=c4d.GEMB_OK)
+            self.is_done = True
+            self.progress_callback('Done', 1, 1)
+            return 
 
         # Images
         self.import_gltf_textures(gltf)
@@ -82,10 +90,11 @@ class ImportGLTF(plugins.ObjectData):
 
         # Add objects to document and do parenting
         for node in nodes.keys():
-            if gltf.data.nodes[int(node)].children:
-                for child in gltf.data.nodes[int(node)].children:
-                    c4d.documents.GetActiveDocument().InsertObject(nodes[child], parent=nodes[node])
-                    # c4d.documents.GetActiveDocument().AddUndo(c4d.UNDOTYPE_NEW, nodes[child])
+            if nodes[node] is not None:
+                if gltf.data.nodes[int(node)].children:
+                    for child in gltf.data.nodes[int(node)].children:
+                        if nodes[child] is not None:
+                            c4d.documents.GetActiveDocument().InsertObject(nodes[child], parent=nodes[node])
 
         # Add root objects to document
         for node in gltf.data.scenes[0].nodes:
@@ -116,12 +125,16 @@ class ImportGLTF(plugins.ObjectData):
                 note = note + "  - Vertex colors: some vertex colors have been imported but disabled to avoid unexpected results"
                 note = note + "\nYou can enable them manually in their material Color and Reflection layer named 'Vertex Colors'"
 
+            if self.has_problematic_polygons:
+                note = note + "  - Some problematic polygons were encountered in the glTF model."
+                node = note + "\nIf the imported model does not display as expected,\nyou can try to download the source file of the model from Sketchfab"
+
             if note:
                 note = '\n\nWarnings: \n' + note
 
             message = 'Successfuly imported model'
             if author and license:
-                message = message + ' by {} under license {}'.format(Utils.remove_url(author), Utils.remove_url(license))
+                message = message + u' by {} under license {}'.format(Utils.remove_url(author), Utils.remove_url(license))
 
             message = message + note
 
@@ -131,6 +144,17 @@ class ImportGLTF(plugins.ObjectData):
 
     def list_to_vec3(self, li):
         return c4d.Vector(li[0], li[1], li[2])
+
+    def has_polygons(self, gltf):
+        # Try to find a geometry
+        for node_idx in range(len(gltf.data.nodes)):
+            gltf_node = gltf.data.nodes[node_idx]
+            if gltf_node.mesh is not None:
+                gltf_mesh = gltf.data.meshes[gltf_node.mesh]
+                for prim in gltf_mesh.primitives:
+                    if prim.indices is not None:
+                        return True
+        return False
 
     def convert_primitive(self, prim, gltf, materials):
         # Helper functions
@@ -259,10 +283,14 @@ class ImportGLTF(plugins.ObjectData):
 
         # Indices are stored like [(0,), (1,), (2,)]
         current_poly = 0
-        for i in range(0, len(indices), 3):
-            poly = c4d.CPolygon(indices[i + 2][0], indices[i + 1][0], indices[i][0])  # indice list is like [(0,), (1,), (2,)]
-            c4d_mesh.SetPolygon(current_poly, poly)
-            current_poly += 1
+        try:
+            for i in range(0, len(indices), 3):
+                poly = c4d.CPolygon(indices[i + 2][0], indices[i + 1][0], indices[i][0])  # indice list is like [(0,), (1,), (2,)]
+                c4d_mesh.SetPolygon(current_poly, poly)
+                current_poly += 1
+        except:
+            self.has_problematic_polygons = True
+            return None # Avoid crash from Sketchup because of wrong geometry
 
         parse_normals()
 
@@ -712,6 +740,8 @@ class ImportGLTF(plugins.ObjectData):
 
         if gltf_node.mesh is not None:
             c4d_object = self.convert_mesh(gltf, gltf_node.mesh, c4d_object, materials)
+            if c4d_object is None:
+                return None
         else:
             c4d_object = c4d.BaseObject(c4d.Onull)
 

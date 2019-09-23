@@ -319,7 +319,7 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 			final_query = final_query + '&sort_by=-publishedAt'
 
 		if self.GetInt32(CBOX_FACE_COUNT) == CBOX_FACE_COUNT_ELT + 1:
-			final_query = final_query + '&max_face_count=10000'
+			final_query = final_query + '&min_face_count=1&max_face_count=10000'
 		elif self.GetInt32(CBOX_FACE_COUNT) == CBOX_FACE_COUNT_ELT + 2:
 			final_query = final_query + '&min_face_count=10000&max_face_count=50000'
 		elif self.GetInt32(CBOX_FACE_COUNT) == CBOX_FACE_COUNT_ELT + 3:
@@ -327,6 +327,8 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		elif self.GetInt32(CBOX_FACE_COUNT) == CBOX_FACE_COUNT_ELT + 4:
 			final_query = final_query + "&min_face_count=100000&max_face_count=250000"
 		elif self.GetInt32(CBOX_FACE_COUNT) == CBOX_FACE_COUNT_ELT + 5:
+			final_query = final_query + "&min_face_count=250000"
+		else:
 			final_query = final_query + "&min_face_count=250000"
 
 		if self.GetInt32(CBOX_CATEGORY) != CBOX_CATEGORY_ELT:

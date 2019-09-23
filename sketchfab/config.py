@@ -58,7 +58,7 @@ class Config:
     SKETCHFAB_REPORT_URL = 'https://help.sketchfab.com/hc/en-us/requests/new?type=exporters&subject=Cinema4D+Plugin'
     SKETCHFAB_SIGNUP = 'https://sketchfab.com/signup'
 
-    DEFAULT_FLAGS = '&staffpicked=true&sort_by=-publishedAt'
+    DEFAULT_FLAGS = '&staffpicked=true&sort_by=-publishedAt&min_face_count=1'
     DEFAULT_SEARCH = SKETCHFAB_SEARCH + \
                      '?type=models&downloadable=true' + DEFAULT_FLAGS
 
