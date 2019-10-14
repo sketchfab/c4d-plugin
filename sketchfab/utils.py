@@ -126,3 +126,27 @@ class Utils:
         cleaned = value[0:start] if start != -1 else value
 
         return cleaned.strip()
+
+    @staticmethod
+    def zip_c4d_directory(path, zipObject, title):
+        """Adds files to zip object.
+
+        :param string path: path of root directory
+        :param object zipObject: the zip object
+        :param string title: the name of the .fbx file with extension
+        """
+
+        include = ['tex']
+        for root, dirs, files, in os.walk(path):
+            dirs[:] = [i for i in dirs if i in include]
+            for file in files:
+                if file.startswith('.'):
+                    continue
+                if file.endswith('.fbx'.lower()) and file == title:
+                    zipObject.write(os.path.join(root, file))
+
+        # zip textures in tex directory
+        texDir = os.path.join(path, 'tex')
+        if os.path.exists(texDir):
+            for f in os.listdir(texDir):
+                zipObject.write(os.path.join(path, 'tex', f))

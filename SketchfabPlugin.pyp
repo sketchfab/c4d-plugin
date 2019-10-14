@@ -14,19 +14,12 @@
 
 import os
 import sys
+import datetime
 
 import c4d
 from c4d import gui, plugins, bitmaps
-
-__author__ = "Sketchfab"
-__website__ = "sketchfab.com"
-__sketchfab__ = "http://sketchfab.com"
-__email__ = "support@sketchfab.com"
-__plugin_title__ = "Sketchfab Plugin"
-__version__ = "1.1.0"
-__plugin_id__ = 1052778
-
-HELP_TEXT = "Sketchfab asset importer for C4D"
+from c4d import documents, storage
+from c4d.threading import C4DThread
 
 # Add paths for plugin
 SKETCHFAB_PLUGIN_DIRECTORY = os.path.dirname(__file__)
@@ -41,19 +34,33 @@ if not SKETCHFAB_CODE_DIRECTORY in sys.path:
 if not SKFB_DEPENDENCIES_PATH in sys.path:
     sys.path.insert(0, SKFB_DEPENDENCIES_PATH)
 
-from sketchfab.ui import *
+from sketchfab.config import Config
+from sketchfab.ui_importer import *
+from sketchfab.ui_exporter import *
 
-class SketchfabPlugin(plugins.CommandData):
+__author__         = Config.PLUGIN_AUTHOR
+__website__        = Config.SKETCHFAB_URL
+__email__          = Config.PLUGIN_EMAIL
+__twitter__        = Config.PLUGIN_TWITTER
+__copyright_year__ = datetime.datetime.now().year
+__version__        = Config.PLUGIN_VERSION
+
+class SketchfabImporter(plugins.CommandData):
     dialog = None
 
     def Execute(self, doc):
-        from sketchfab import ui
+        from sketchfab import ui_importer
+
+        # Check C4D version
+        if c4d.GetC4DVersion() < 20000 and c4d.GeGetCurrentOS() == c4d.OPERATINGSYSTEM_WIN:
+            c4d.gui.MessageDialog("Sorry, but the plugin is incompatible with the version of Cinema 4D you are currently running.\n\nThe Sketchfab plugin for Windows requires\nCinema 4D R20 or greater.", c4d.GEMB_OK)
+            return False
 
         if self.dialog is None:
             self.dialog = SkfbPluginDialog()
 
         return self.dialog.Open(dlgtype=c4d.DLG_TYPE_ASYNC,
-                                pluginid=__plugin_id__,
+                                pluginid=Config.IMPORTER_ID,
                                 defaultw=600,
                                 defaulth=450)
 
@@ -61,16 +68,54 @@ class SketchfabPlugin(plugins.CommandData):
         if self.dialog is None:
             self.dialog = SkfbPluginDialog()
 
-        return self.dialog.Restore(pluginid=__plugin_id__, secret=sec_ref)
+        return self.dialog.Restore(pluginid=Config.IMPORTER_ID, secret=sec_ref)
+
+
+class SketchfabExporter(plugins.CommandData):
+    dialog = None
+
+    def Execute(self, doc):
+        from sketchfab import ui_exporter
+
+        # Check C4D version
+        if c4d.GetC4DVersion() < 20000 and c4d.GeGetCurrentOS() == c4d.OPERATINGSYSTEM_WIN:
+            c4d.gui.MessageDialog("Sorry, but the plugin is incompatible with the version of Cinema 4D you are currently running.\n\nThe Sketchfab plugin for Windows requires\nCinema 4D R20 or greater.", c4d.GEMB_OK)
+            return False
+
+        if self.dialog is None:
+            self.dialog = MainDialog()
+
+        return self.dialog.Open(dlgtype=c4d.DLG_TYPE_ASYNC,
+                                pluginid=Config.EXPORTER_ID,
+                                defaultw=600,
+                                defaulth=450)
+
+    def RestoreLayout(self, sec_ref):
+        if self.dialog is None:
+            self.dialog = MainDialog()
+
+        return self.dialog.Restore(pluginid=Config.EXPORTER_ID, secret=sec_ref)
+
 
 if __name__ == "__main__":
+
+    # Get the Sketchfab icon
     icon = bitmaps.BaseBitmap()
-    dir, file = os.path.split(__file__)
-    iconPath = os.path.join(dir, "res", "icon.png")
+    iconPath = os.path.join(os.path.split(__file__)[0], "res", "icon.png")
     icon.InitWith(iconPath)
-    plugins.RegisterCommandPlugin(id=__plugin_id__,
-                                  str=__plugin_title__,
+
+    # Register the importer
+    plugins.RegisterCommandPlugin(id=Config.IMPORTER_ID,
+                                  str=Config.IMPORTER_TITLE,
                                   info=0,
-                                  help=HELP_TEXT,
-                                  dat=SketchfabPlugin(),
+                                  help=Config.IMPORTER_HELP,
+                                  dat=SketchfabImporter(),
+                                  icon=icon)
+
+    # Register the exporter
+    plugins.RegisterCommandPlugin(id=Config.EXPORTER_ID,
+                                  str=Config.EXPORTER_TITLE,
+                                  info=0,
+                                  help=Config.EXPORTER_HELP,
+                                  dat=SketchfabExporter(),
                                   icon=icon)
