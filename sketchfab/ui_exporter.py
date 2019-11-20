@@ -159,9 +159,11 @@ class PublishModelThread(c4d.threading.C4DThread):
 			model_id = result["uid"]
 			g_uploaded = True
 			# Open website on model page
+			"""
 			result = gui.MessageDialog("Your model was succesfully uploaded to Sketchfab.com.\nClick OK to open the browser on your model page", c4d.GEMB_OKCANCEL)
 			if result == c4d.GEMB_R_OK:
 				webbrowser.open(Config.SKETCHFAB_URL + '/models/' + model_id)
+			"""
 
 		# Clean up
 		self.cleanup_files([zipName + ".zip", exportDirectory])
