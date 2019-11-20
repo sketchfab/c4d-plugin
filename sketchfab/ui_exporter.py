@@ -83,6 +83,7 @@ export_options = {
 g_uploaded = False
 g_error = ""
 g_upload_message = ""
+model_id = ""
 
 
 class PublishModelThread(c4d.threading.C4DThread):
@@ -100,6 +101,7 @@ class PublishModelThread(c4d.threading.C4DThread):
 	def Main(self):
 		global g_uploaded
 		global g_error
+		global model_id
 
 		# Create a temporary directory to export everything in
 		exportDirectory = tempfile.mkdtemp()
@@ -156,12 +158,9 @@ class PublishModelThread(c4d.threading.C4DThread):
 				print("request:")
 				print(r.text)
 		else:
-			model_id = result["uid"]
+			# We'll open the messagebox in CoreMessage
 			g_uploaded = True
-			# Open website on model page
-			result = gui.MessageDialog("Your model was succesfully uploaded to Sketchfab.com.\nClick OK to open the browser on your model page", c4d.GEMB_OKCANCEL)
-			if result == c4d.GEMB_R_OK:
-				webbrowser.open(Config.SKETCHFAB_URL + '/models/' + model_id)
+			model_id = result["uid"]
 
 		# Clean up
 		self.cleanup_files([zipName + ".zip", exportDirectory])
@@ -297,10 +296,12 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 			c4d.StatusSetBar(100)
 
 			if g_uploaded:
-				print("Your model was succesfully uploaded to Sketchfab.com.")
+				result = gui.MessageDialog("Your model was uploaded to Sketchfab.com.\nClick OK to open it in your browser.", c4d.GEMB_OKCANCEL)
+				if result == c4d.GEMB_R_OK:
+					webbrowser.open(Config.SKETCHFAB_URL + '/models/' + model_id)
 			else:
-				gui.MessageDialog("Unable to upload model to Sketchfab.com. Reason: {0}".format(g_error), c4d.GEMB_OK)
 				print("Unable to upload model to Sketchfab.com. Reason: {0}".format(g_error))
+				gui.MessageDialog("Unable to upload model to Sketchfab.com. Reason: {0}".format(g_error), c4d.GEMB_OK)
 
 			self.draw_upload_button()
 			self.Enable(BTN_PUBLISH, True)
@@ -358,24 +359,16 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 			enable_animation = self.GetBool(CHK_ANIMATION)
 			auto_publish = not(self.GetBool(CHK_PUBLISHDRAFT))
 
-			# MAKE SURE THAT WE ARE CONNECTED !!
-
-			if len(title) == 0:
-				gui.MessageDialog("Please enter a name for your model.", c4d.GEMB_OK)
-				self.Enable(BTN_PUBLISH, True)
-				self.SetTitle(__exporter_title__)
-				c4d.StatusClear()
-				return False
-
-			if len(title) > 32:
-				gui.MessageDialog("The model name should not have more than 32 characters.", c4d.GEMB_OK)
-				self.Enable(BTN_PUBLISH, True)
-				self.SetTitle(__exporter_title__)
-				c4d.StatusClear()
-				return False
-
-			if (len(description) > 1024):
-				gui.MessageDialog("Please use a description with less than 1024 characters", c4d.GEMB_OK)
+			# Error messages
+			if len(title) == 0 or len(title) > 32 or len(description) > 1024:
+				error_message = ""
+				if len(title) == 0:
+					error_message = "Please enter a name for your model."
+				if len(title) > 32:
+					error_message = "Please enter a name for your model."
+				if len(description) > 1024:
+					error_message = "Please enter a name for your model."
+				gui.MessageDialog(error_message, c4d.GEMB_OK)
 				self.Enable(BTN_PUBLISH, True)
 				self.SetTitle(__exporter_title__)
 				c4d.StatusClear()
