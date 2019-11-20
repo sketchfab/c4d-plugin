@@ -213,7 +213,7 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		self.AddCheckbox(id=CHK_IS_PBR, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=80, inith=TEXT_WIDGET_HEIGHT, name='PBR')
 		self.SetBool(CHK_IS_PBR, False)
 		self.AddCheckbox(id=CHK_IS_STAFFPICK, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=120, inith=TEXT_WIDGET_HEIGHT, name='Staffpick')
-		self.SetBool(CHK_IS_STAFFPICK, True)
+		self.SetBool(CHK_IS_STAFFPICK, False)
 		self.AddCheckbox(id=CHK_IS_ANIMATED, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=150, inith=TEXT_WIDGET_HEIGHT, name='Animated')
 		self.SetBool(CHK_IS_ANIMATED, False)
 
@@ -312,9 +312,9 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 			final_query = final_query + '&staffpicked=true'
 
 		if self.GetInt32(CBOX_SORT_BY) == CBOX_SORT_BY_ELT + 1:
-			final_query = final_query + '&sort_by=-viewCount'
-		elif self.GetInt32(CBOX_SORT_BY) == CBOX_SORT_BY_ELT + 2:
 			final_query = final_query + '&sort_by=-likeCount'
+		elif self.GetInt32(CBOX_SORT_BY) == CBOX_SORT_BY_ELT + 2:
+			final_query = final_query + '&sort_by=-viewCount'
 		elif self.GetInt32(CBOX_SORT_BY) == CBOX_SORT_BY_ELT + 3:
 			final_query = final_query + '&sort_by=-publishedAt'
 
@@ -329,7 +329,7 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		elif self.GetInt32(CBOX_FACE_COUNT) == CBOX_FACE_COUNT_ELT + 5:
 			final_query = final_query + "&min_face_count=250000"
 		else:
-			final_query = final_query + "&min_face_count=250000"
+			final_query = final_query + "&min_face_count=1"
 
 		if self.GetInt32(CBOX_CATEGORY) != CBOX_CATEGORY_ELT:
 			final_query = final_query + '&categories={}'.format(Config.SKETCHFAB_CATEGORIES[self.GetInt32(CBOX_CATEGORY) - CBOX_CATEGORY_ELT][0])
@@ -345,7 +345,7 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		self.SetBool(CHK_IS_PBR, False)
 		self.SetInt32(CBOX_CATEGORY, CBOX_CATEGORY_ELT)
 		self.SetInt32(CBOX_FACE_COUNT, CBOX_FACE_COUNT_ELT)
-		self.SetInt32(CBOX_SORT_BY, CBOX_SORT_BY_ELT + 3)
+		self.SetInt32(CBOX_SORT_BY, CBOX_SORT_BY_ELT + 1)
 
 	def Command(self, id, msg):
 		trigger_search = False
