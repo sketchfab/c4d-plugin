@@ -12,6 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+ANIMATION SUPPORT:
+1 - Solid animation
+2 - Bones
+3 - Morph animations
+
+WARNING:
+- XYZ and Y-UP at C4D
+- Frame starts and ends
+- FPS and BaseTime
+- Existence check for the conditions
+- Performance and optimization
+"""
+
 import os
 import math
 import sys
@@ -19,6 +33,7 @@ import c4d
 import shutil
 
 from c4d import plugins, gui
+from c4d.modules.character import CAWeightTag
 
 from gltfio.imp.gltf2_io_gltf import glTFImporter
 from gltfio.imp.gltf2_io_binary import BinaryData
@@ -45,10 +60,35 @@ class TextureWrapper:
 
         return sha
 
+class Skin:
+
+    def __init__(self, gltf, skin_idx, mesh_idx, node_idx):
+
+        # Get the data
+        self.gltf_skin = gltf.data.skins[skin_idx]
+        self.node_idx  = [node_idx]
+        self.mesh_idx  = [mesh_idx]
+        self.skin_idx  = skin_idx
+        self.name      = self.gltf_skin.name
+        self.root      = self.gltf_skin.skeleton
+        self.joints    = self.gltf_skin.joints
+        self.ibm_idx   = self.gltf_skin.inverse_bind_matrices
+        self.IBMs      = BinaryData.get_data_from_accessor(gltf, self.ibm_idx)
+
+        # Prepare the c4d objects
+        self.c4d_objects = []
+        self.c4d_tags    = []
+        self.c4d_joints  = []
+        self.c4d_ibms    = []
+
+    def process(self):
+        pass
 
 class ImportGLTF(plugins.ObjectData):
-    COLOR_BLACK = c4d.Vector(0.0, 0.0, 0.0)
-    COLOR_WHITE = c4d.Vector(1.0, 1.0, 1.0)
+
+    #############################
+    # BASE FUNCTIONS
+    #############################
 
     def __init__(self, progress_callback=None):
         self.progress_callback = progress_callback
@@ -60,12 +100,17 @@ class ImportGLTF(plugins.ObjectData):
         self.has_problematic_polygons = False
 
     def run(self, filepath, uid=None):
+
+        print("\nImporting %s\n" % filepath)
+
+
         self.model_dir = os.path.split(filepath)[0]
         self.is_done = False
 
         gltf = glTFImporter(filepath)
         success, txt = gltf.read()
 
+        # Discard point clouds
         if not self.has_polygons(gltf):
             msg = "No polygons detected in the model.\nPoints cloud cannot be imported into Cinema 4D.\nAborting."
             gui.MessageDialog(text=msg, type=c4d.GEMB_OK)
@@ -78,34 +123,232 @@ class ImportGLTF(plugins.ObjectData):
 
         # Materials
         imported_materials = self.import_gltf_materials(gltf)
-        for index in imported_materials:
-            c4d.documents.GetActiveDocument().InsertMaterial(imported_materials[index])
-            # c4d.documents.GetActiveDocument().AddUndo(c4d.UNDOTYPE_NEW, imported_materials[index])
+        
+        # Read the skins
+        skins = self.parse_skins(gltf)
 
-        # Nodes
+        # Create the classic nodes and joints
         nodes = {}
+        joints = list(set([j for jts in [skins[i].joints for i in skins] for j in jts]))
         for nodeidx in range(len(gltf.data.nodes)):
-            nodes[nodeidx] = self.convert_node(gltf, nodeidx, imported_materials)
+            if nodeidx not in joints:
+                nodes[nodeidx] = self.convert_node(gltf, nodeidx, imported_materials)
+            else:
+                nodes[nodeidx] = self.convert_joint(gltf, nodeidx)
             self.progress_callback("Importing nodes", nodeidx + 1, len(gltf.data.nodes))
 
+        # Skins and weights and Stuff
+        self.create_skins(gltf, nodes, skins)
+
         # Add objects to document and do parenting
-        for node in nodes.keys():
-            if nodes[node] is not None:
-                if gltf.data.nodes[int(node)].children:
-                    for child in gltf.data.nodes[int(node)].children:
-                        if nodes[child] is not None:
-                            c4d.documents.GetActiveDocument().InsertObject(nodes[child], parent=nodes[node])
+        self.do_parenting(gltf, nodes, skins)
+
+        floatingObj = c4d.BaseObject(c4d.Ojoint) # LLLLLOOOOOOOLLLLL
+        floatingObj.SetName("TOTO")
+        c4d.documents.GetActiveDocument().InsertObject(floatingObj)
+
+        # Apply the IBMs to the skeleton
+        IBMS = {}
+        for i in skins:
+
+            skin = skins[i]
+
+            for j, obj in enumerate(skin.c4d_objects):
+
+                for k, tag in enumerate(skin.c4d_tags[j]):
+
+                    for l, (joint, ibm) in enumerate(zip(skin.c4d_joints[j], skin.c4d_ibms[j])):
+                        
+                        # Read the IBM
+                        M   = ibm
+                        v1  = c4d.Vector(M[0], M[1], M[2])
+                        v2  = c4d.Vector(M[4], M[5], M[6])
+                        v3  = c4d.Vector(M[8], M[9], M[10])
+                        off = c4d.Vector(M[12], M[13], M[14])
+                        mat = c4d.Matrix(off, v1, v2, v3)
+
+                        # Apply to an object and correct
+                        floatingObj.SetMg(mat)
+                        pos = floatingObj.GetAbsPos()
+                        rot = floatingObj.GetAbsRot()
+                        pos[2] = -pos[2]
+                        rot[0] = -rot[0]
+                        rot[1] = -rot[1]
+                        floatingObj.SetAbsPos(pos)
+                        floatingObj.SetAbsRot(rot)
+                        M = floatingObj.GetMg()
+
+                        # Save
+                        _id = "%d_%d_%d_%d" % (i,j,k,l)
+                        IBMS[_id] = joint.GetMg()
+
+                        # Apply
+                        joint.SetMg(M.__invert__())
+
+                # Create the skin object
+                c4d_skin = c4d.BaseObject(c4d.Oskin)
+                c4d.documents.GetActiveDocument().InsertObject(c4d_skin, parent=obj)
+
+                # Set the bind pose and add a skin modifier to the weighted object
+                doc = c4d.documents.GetActiveDocument()
+                for tag in obj.GetTags():
+                    if isinstance(tag, c4d.modules.character.CAWeightTag):
+                        doc.SetActiveTag(tag, mode=c4d.SELECTION_ADD)
+                        c4d.CallButton(tag, c4d.ID_CA_WEIGHT_TAG_SET)
+                        c4d.EventAdd(c4d.EVENT_0)
+        
+        # APPLY THE INVERSE OF IBMS
+        for i in skins:
+            skin = skins[i]
+            for j, obj in enumerate(skin.c4d_objects):
+                for k, tag in enumerate(skin.c4d_tags[j]):
+                    for l, (joint, ibm) in enumerate(zip(skin.c4d_joints[j], skin.c4d_ibms[j])):
+                        _id = "%d_%d_%d_%d" % (i,j,k,l)
+                        joint.SetMg(IBMS[_id])
+
+
+        
+        # Animations
+        self.import_animations(gltf, nodes)
+
+        # Display the dialog
+        self.finish_import(gltf, nodes)
+
+
+    def parse_skins(self, gltf):
+        skins = {}
+        for nodeidx in range(len(gltf.data.nodes)):
+            gltf_node = gltf.data.nodes[nodeidx]
+            if hasattr(gltf_node, "skin") and gltf_node.skin is not None:
+                if gltf_node.skin not in skins:
+                    skin = Skin(gltf, gltf_node.skin, gltf_node.mesh, nodeidx)
+                    skins[gltf_node.skin] = skin
+                else:
+                    skins[gltf_node.skin].mesh_idx.append(gltf_node.mesh)
+                    skins[gltf_node.skin].node_idx.append(nodeidx)
+        return skins
+
+    def create_skins(self, gltf, nodes, skins):
+
+        for skin_idx in skins:
+
+            skin = skins[skin_idx]
+            
+            for iNode, iMesh in zip(skin.node_idx, skin.mesh_idx):
+
+                tags = []
+                c4d_obj   = nodes[iNode]
+                skin.c4d_objects.append(c4d_obj)
+
+
+                gltf_mesh = gltf.data.meshes[iMesh]
+
+                # Read in the data
+                for prim in gltf_mesh.primitives:
+
+                    # Create the C4D
+                    tag = CAWeightTag()
+                    c4d_obj.InsertTag(tag)                    
+                    tags.append(tag)
+
+                    # Accessor data
+                    weights = BinaryData.get_data_from_accessor(gltf, prim.attributes["WEIGHTS_0"]) if "WEIGHTS_0" in prim.attributes else []
+                    joints  = BinaryData.get_data_from_accessor(gltf, prim.attributes["JOINTS_0"])  if "JOINTS_0"  in prim.attributes else []
+                    local_joints = list(set([j for sub in joints for j in sub]))
+
+                    # Add the joints
+                    c4d_joints = []
+                    c4d_ibms = []
+
+                    joint_to_tag_id = {}
+
+                    for i, idx in enumerate(local_joints):
+
+                        ind = tag.AddJoint( nodes[ skin.joints[ idx ] ] )                        
+                        c4d_joints.append(nodes[skin.joints[idx]])
+                        c4d_ibms.append(skin.IBMs[idx])
+
+                        joint_to_tag_id[ skin.joints[idx] ] = i
+                    
+                    skin.c4d_joints.append(c4d_joints)
+                    skin.c4d_ibms.append(c4d_ibms)
+
+                    #Set weights according to the version
+                    if c4d.GetC4DVersion() < 21000:
+                        for vert_idx in range(len(weights)):
+                            for influence_idx in range(len(weights[0])):
+                                weight  = weights[vert_idx][influence_idx]
+                                if weight > 0:
+                                    tag.SetWeight(
+                                        joint_to_tag_id[ skin.joints[joints[vert_idx][influence_idx] ]], 
+                                        vert_idx, 
+                                        weight
+                                    )
+                                    c4d.EventAdd(c4d.EVENT_0)
+                    else:
+                        tag.SetWeightMap(nodeidx, weights)
+
+                    c4d.EventAdd()
+
+
+
+                    """Works
+                    gltf_to_c4d = {}
+                    cpt = 0
+                    for i, (idx, ibm) in enumerate(zip(skin.joints, skin.IBMs)):
+                        #if idx in local_joints:
+                        tag.AddJoint(nodes[idx])
+                        LOCIBM.append(ibm)
+                        gltf_to_c4d[ idx ] = (cpt, idx, ibm)
+                        cpt += 1
+                    """
+
+                    """
+                    gltf_to_c4d = {}
+                    cpt = 0
+                    for i, idx in enumerate(local_joints):
+                        tag.AddJoint(nodes[skin.joints[idx]])
+                        LOCIBM.append(skin.IBMs[idx])
+                        gltf_to_c4d[ idx ] = (cpt, idx, 1)
+                        cpt+=1
+                    """
+
+                    """
+                    for i, (idx, ibm) in enumerate(zip(skin.joints, skin.IBMs)):
+                        #if idx in local_joints:
+                        
+                        
+                        gltf_to_c4d[ idx ] = (cpt, idx, ibm)
+                        cpt += 1
+                    """
+
+                skin.c4d_tags.append(tags)
+
+    def do_parenting(self, gltf, nodes, skins):
+
+        # Ignore transforms for skinned meshes
+        mesh_nodes_idx = [n for n in range(len(gltf.data.nodes)) if gltf.data.nodes[n].mesh is not None and gltf.data.nodes[n].skin is not None]
 
         # Add root objects to document
         for node in gltf.data.scenes[0].nodes:
             c4d.documents.GetActiveDocument().InsertObject(nodes[node])
-            # c4d.documents.GetActiveDocument().AddUndo(c4d.UNDOTYPE_NEW, nodes[node])
 
+        # Do the parenting
+        for n in nodes:
+            if nodes[n] is not None:
+                # Insert the children under their respective parents
+                if gltf.data.nodes[int(n)].children:
+                    for child in gltf.data.nodes[int(n)].children:
+                        if nodes[child] is not None:
+                            if child not in mesh_nodes_idx:
+                                c4d.documents.GetActiveDocument().InsertObject(nodes[child], parent=nodes[n])
+                            else:
+                                c4d.documents.GetActiveDocument().InsertObject(nodes[child])
+
+        # Apply changes
         c4d.documents.GetActiveDocument().SetChanged()
-        c4d.DrawViews()
-        # c4d.documents.GetActiveDocument().EndUndo()
-        self.is_done = True
 
+    def finish_import(self, gltf, nodes):
         gltf_meta = gltf.data.asset
         if gltf_meta.extras:
             title = gltf_meta.extras.get('title', 'Imported')
@@ -140,10 +383,259 @@ class ImportGLTF(plugins.ObjectData):
 
             gui.MessageDialog(text=message, type=c4d.GEMB_OK)
 
+        self.is_done = True
         self.progress_callback('Done', 1, 1)
+        c4d.DrawViews()
+        c4d.EventAdd()
+
+    def AbortImport(self):
+        pass
+
+    #############################
+    # ANIMATIONS
+    #############################
+
+    def import_animations(self, gltf, nodes):
+
+        nAnimations = len(gltf.data.animations)
+
+        CHANNELS = {}
+
+        # Values which... just work
+        eps    = 1.e-3 # Minimal time between distinct frames
+        margin = 1.e-2 # Offset between animations
+
+        # Read the animation data into CHANNELS
+        for anim_idx, animation in enumerate(gltf.data.animations):
+            for channel in animation.channels:
+
+                # Parse the glTF data
+                node_idx    = channel.target.node
+                path        = channel.target.path
+                ID          = "%d_%s" % (node_idx, path)
+
+                # Create the channel
+                if ID not in CHANNELS:
+                    CHANNELS[ID] = {}
+                    CHANNELS[ID]["time"] = [[] for i in range(nAnimations)]
+                    CHANNELS[ID]["data"] = [[] for i in range(nAnimations)]
+                    CHANNELS[ID]["fixed"] = [0 for i in range(nAnimations)]
+                    CHANNELS[ID]["path"] = path
+                    CHANNELS[ID]["node"] = node_idx
+                else:
+                    if len(CHANNELS[ID]["time"][anim_idx]):
+                        print("dupli")
+                        # The channel is a duplicate for this animation, do not go on
+                        continue
+
+                # Read the buffers
+                sampler     = animation.samplers[channel.sampler]
+                in_data  = BinaryData.get_data_from_accessor(gltf, sampler.input)
+                in_data  = [t[0] for t in in_data]
+                out_data = BinaryData.get_data_from_accessor(gltf, sampler.output)
+
+                # Sort the keyframes
+                in_data, out_data = (list(t) for t in zip(*sorted(zip(in_data, out_data))))
+
+                # Remove duplicates
+                oldt = -1e8
+                cpt = 0
+                idx_to_remove = []
+                for i,o in zip(in_data, out_data):
+                    if i-oldt < eps:
+                        idx_to_remove.append(cpt)
+                    cpt+=1
+                    oldt = i
+                for idx in idx_to_remove[::-1]:
+                    in_data.pop(idx)
+                    out_data.pop(idx)
+
+                CHANNELS[ID]["time"][anim_idx] = in_data
+                CHANNELS[ID]["data"][anim_idx] = out_data
+
+
+        # Offset the animations to make them sequential
+        ranges = [{"start": 1e8, "end":-1e8} for a in gltf.data.animations]
+        animationStart = 0
+        for i in range(nAnimations):
+            # Compute the animation range
+            for ID in CHANNELS:
+                if len(CHANNELS[ID]["time"][i]): # Isactiveforthisanim
+                    ranges[i]["start"] = min(CHANNELS[ID]["time"][i][0],  ranges[i]["start"])
+                    ranges[i]["end"]   = max(CHANNELS[ID]["time"][i][-1], ranges[i]["end"])
+            # Offset the time values
+            for ID in CHANNELS:
+                if len(CHANNELS[ID]["time"][i]):
+                    CHANNELS[ID]["time"][i] = [t + animationStart - ranges[i]["start"] for t in CHANNELS[ID]["time"][i]]
+            # Update the starting point of the next animation and the newranges
+            ranges[i]["start"] += animationStart
+            ranges[i]["end"]   += animationStart
+            animationStart     += margin + ranges[i]["end"] - ranges[i]["start"]
+
+        print(ranges)
+            
+        # Remember the static positions of the nodes concerned by the keyframed channels
+        for ID in CHANNELS:
+            node_idx   = CHANNELS[ID]["node"]
+            path       = CHANNELS[ID]["path"]
+            
+            c4d_object = nodes[node_idx]
+            CHANNELS[ID]["rest_data"] = None
+            if path == "translation":
+                CHANNELS[ID]["rest_data"] = c4d_object.GetAbsPos()
+            elif path == "scale":
+                CHANNELS[ID]["rest_data"] = c4d_object.GetAbsScale()
+            elif path == "rotation":
+                CHANNELS[ID]["rest_data"] = c4d_object.GetAbsRot()
+
+        # Add keyframes to fix the extrapolation due to the sequential trick
+        for i in range(nAnimations):
+            for ID in CHANNELS:
+                c = CHANNELS[ID]
+                
+                if not len(c["time"][i]): # Empty channel -> we fix it to the rest position
+                    c["time"][i] = [ranges[i]["start"] + eps, ranges[i]["end"] - eps]
+                    c["data"][i] = [c["rest_data"], c["rest_data"]]                    
+                    c["fixed"][i] = 1
+
+                else:
+
+                    # MIN
+                    t, d = c["time"][i][0], c["data"][i][0]
+                    if t > ranges[i]["start"] + eps:
+                        c["time"][i].insert(0, ranges[i]["start"] + eps)
+                        c["data"][i].insert(0, d)
+
+                    # MAX
+                    t, d = c["time"][i][-1], c["data"][i][-1]
+                    if t < ranges[i]["end"] - eps:
+                        c["time"][i].append(ranges[i]["end"] - eps)
+                        c["data"][i].append(d)
+
+        # Add the keyframes
+        for ani in range(nAnimations):
+            for ID in CHANNELS:
+
+                channel = CHANNELS[ID]
+
+                # Read in the dict data
+                path = channel["path"]
+                node_idx = channel["node"]
+                in_data = channel["time"][ani]
+                out_data = channel["data"][ani]
+
+                # Generate and get the C4D animation data
+                # Create the track types
+                trackType = None
+                if path == "translation":
+                    trackType =  c4d.ID_BASEOBJECT_REL_POSITION
+                elif path == "scale":
+                    trackType =  c4d.ID_BASEOBJECT_REL_SCALE
+                elif path == "rotation":
+                    trackType =  c4d.ID_BASEOBJECT_REL_ROTATION
+                else:
+                    print("Can't find trackType for %s" % path)
+                    continue
+
+                # Get the C4D object
+                c4d_object = nodes[node_idx]
+
+                # Get the tracks and curves
+                tracks = []
+                for axis in [c4d.VECTOR_X, c4d.VECTOR_Y, c4d.VECTOR_Z]:
+
+                    descid = c4d.DescID(
+                        c4d.DescLevel(trackType, c4d.DTYPE_VECTOR,0), 
+                        c4d.DescLevel(axis, c4d.DTYPE_REAL,0)
+                    )
+                    descid = [trackType, axis]
+
+                    track = c4d_object.FindCTrack(descid)
+
+                    if track is None:
+                        track = c4d.CTrack(c4d_object, descid)
+                        c4d_object.InsertTrackSorted(track)
+
+                    tracks.append(track)
+
+                # Get the F-Curves
+                curves = [track.GetCurve() for track in tracks]
+
+                # Create the keyframes
+                for i,o in zip(in_data, out_data):
+                    
+                    data = None
+                    if channel["fixed"][ani]:
+                        # Animation data for "fixed" keyframes
+                        data = o
+                    else:
+                        # Normal keyframes
+                        if path == "rotation":
+                            data = self.quat_to_eulerxyz(o)
+                            data = [data[0], data[1], -data[2]]
+                        elif path == "translation":
+                            data = c4d.Vector(o[0], o[1], -o[2])
+                        elif path == "scale":
+                            data = c4d.Vector(o[0], o[1], o[2])
+                        else:
+                            print("We don't support morph targets for now...")
+
+                    # Get the time
+                    mytime = c4d.BaseTime(i)
+                    # Create a keyframe
+                    for j in range(3):
+                        key = c4d.CKey()
+                        key.SetTime(curves[j], mytime)
+                        key.SetValue(curves[j], data[j])
+                        curves[j].InsertKey(key)
+                        key.SetInterpolation(curves[j], c4d.CINTERPOLATION_LINEAR)
+                        key.SetQuatInterpolation(curves[j], c4d.ROTATIONINTERPOLATION_QUATERNION_SLERP)
+            
+
+                # Update
+                c4d_object.Message(c4d.MSG_UPDATE)
+                self.progress_callback("Importing animations", anim_idx + 1, len(gltf.data.animations))
+
+        # Add markers
+        for ani in range(nAnimations):
+            t = c4d.BaseTime(ranges[ani]["start"])
+            c4d.documents.AddMarker(c4d.documents.GetActiveDocument(), pPred=None, time=t, name = gltf.data.animations[ani].name + "_begin")
+            t = c4d.BaseTime(ranges[ani]["end"])
+            c4d.documents.AddMarker(c4d.documents.GetActiveDocument(), pPred=None, time=t, name = gltf.data.animations[ani].name + "_end")
+
+        c4d.EventAdd()
+
+
+
+    #############################
+    # LITTLE HELPERS
+    #############################
 
     def list_to_vec3(self, li):
         return c4d.Vector(li[0], li[1], li[2])
+
+    def switch_handedness_v3(self, v3):
+        v3[2] = -v3[2]
+
+        return v3
+
+    def quat_to_eulerxyz(self, quat):
+        x, y, z, w = quat
+
+        t0 = +2.0 * (w * x + y * z)
+        t1 = +1.0 - 2.0 * (x * x + y * y)
+        X = math.degrees(math.atan2(t0, t1))
+
+        t2 = +2.0 * (w * y - z * x)
+        t2 = +1.0 if t2 > +1.0 else t2
+        t2 = -1.0 if t2 < -1.0 else t2
+        Y = math.degrees(math.asin(t2))
+
+        t3 = +2.0 * (w * z + x * y)
+        t4 = +1.0 - 2.0 * (y * y + z * z)
+        Z = math.degrees(math.atan2(t3, t4))
+
+        return c4d.Vector(math.radians(X), math.radians(Y), math.radians(Z))
 
     def has_polygons(self, gltf):
         # Try to find a geometry
@@ -155,6 +647,78 @@ class ImportGLTF(plugins.ObjectData):
                     if prim.indices is not None:
                         return True
         return False
+
+
+    #############################
+    # CONVERSION FUNCTIONS
+    #############################
+
+    def convert_node(self, gltf, node_idx, materials=None):
+        gltf_node = gltf.data.nodes[node_idx]
+        c4d_object = None
+
+        if gltf_node.mesh is not None:
+            # Try to read a mesh and create a normal c4d object
+            c4d_object = self.convert_mesh(gltf, gltf_node.mesh, materials)
+            if c4d_object is None:
+                return None
+            name = gltf.data.meshes[gltf_node.mesh].name if gltf.data.meshes[gltf_node.mesh].name is not None else "Mesh_%d" % node_idx
+            c4d_object.SetName(name)
+        else:
+            c4d_object = c4d.BaseObject(c4d.Onull)
+            c4d_object.SetName(gltf_node.name if gltf_node.name else "GLTFObject")
+        
+
+        c4d_object.SetRotationOrder(5)  # Local XYZ
+        c4d_object.SetQuaternionRotationMode(1, 0)
+
+
+        # If the mesh is associated with a skin, then we only take the skin's skeleton as transform
+        ignoreTransforms = gltf_node.mesh is not None and gltf_node.skin is not None
+
+        if not ignoreTransforms:
+            
+            if gltf_node.matrix:
+
+                print("using matrix on %s" % gltf_node.name)
+
+                mat = gltf_node.matrix
+                v1 = c4d.Vector(mat[0], mat[1], mat[2])
+                v2 = c4d.Vector(mat[4], mat[5], mat[6])
+                v3 = c4d.Vector(mat[8], mat[9], mat[10])
+                off = c4d.Vector(mat[12], mat[13], mat[14])
+                c4d_mat = c4d.Matrix(off, v1, v2, v3)
+                c4d_object.SetMg(c4d_mat)
+
+                pos = c4d_object.GetAbsPos()
+                rot = c4d_object.GetAbsRot()
+                pos[2] = -pos[2]
+                rot[0] = -rot[0]
+                rot[1] = -rot[1]
+                c4d_object.SetAbsPos(pos)
+                c4d_object.SetAbsRot(rot)
+
+            else:
+
+                print("using trs on %s" % gltf_node.name)
+
+                if gltf_node.rotation:
+                    c4d_object.SetAbsRot(self.quat_to_eulerxyz(gltf_node.rotation))
+                if gltf_node.scale:
+                    scale = gltf_node.scale
+                    c4d_object.SetAbsScale(c4d.Vector(scale[0], scale[1], scale[2]))
+                if gltf_node.translation:
+                    tr = gltf_node.translation
+                    c4d_object.SetAbsPos(c4d.Vector(tr[0], tr[1], tr[2]))
+
+                pos = c4d_object.GetAbsPos()
+                rot = c4d_object.GetAbsRot()
+                pos[2] = -pos[2]
+                rot[2] = -rot[2]
+                c4d_object.SetAbsPos(pos)
+                c4d_object.SetAbsRot(rot)
+
+        return c4d_object
 
     def convert_primitive(self, prim, gltf, materials):
         # Helper functions
@@ -300,36 +864,97 @@ class ImportGLTF(plugins.ObjectData):
         for texcoord_index in range(10):
             parse_texcoords(texcoord_index, c4d_mesh)
 
-        mat = materials[prim.material]
+        if prim.material is not None:
+        
+            mat = materials[prim.material]
 
-        # Only parse COLORS_0
-        colortag = parse_vertex_colors(0, c4d_mesh)
-        self.make_vertex_colors_layer(mat, colortag)
-        # Enable vertex colors for material
+            # Only parse COLORS_0
+            colortag = parse_vertex_colors(0, c4d_mesh)
+            self.make_vertex_colors_layer(mat, colortag)
+            # Enable vertex colors for material
 
-        if not gltf.data.materials[prim.material].double_sided:
-            mat.SetParameter(c4d.TEXTURETAG_SIDE, c4d.SIDE_FRONT, c4d.DESCFLAGS_SET_NONE)
+            if not gltf.data.materials[prim.material].double_sided:
+                mat.SetParameter(c4d.TEXTURETAG_SIDE, c4d.SIDE_FRONT, c4d.DESCFLAGS_SET_NONE)
 
-        mattag = c4d.TextureTag()
-        mattag.SetParameter(c4d.TEXTURETAG_MATERIAL, mat, c4d.DESCFLAGS_SET_NONE)
-        mattag.SetParameter(c4d.TEXTURETAG_PROJECTION, c4d.TEXTURETAG_PROJECTION_UVW, c4d.DESCFLAGS_GET_NONE)
-        c4d_mesh.InsertTag(mattag)
+            mattag = c4d.TextureTag()
+            mattag.SetParameter(c4d.TEXTURETAG_MATERIAL, mat, c4d.DESCFLAGS_SET_NONE)
+            mattag.SetParameter(c4d.TEXTURETAG_PROJECTION, c4d.TEXTURETAG_PROJECTION_UVW, c4d.DESCFLAGS_GET_NONE)
+            c4d_mesh.InsertTag(mattag)
 
         c4d_mesh.SetDirty(c4d.DIRTYFLAGS_ALL)
 
         return c4d_mesh
 
-    def convert_mesh(self, gltf, mesh_index, c4d_object, materials):
+    def convert_mesh(self, gltf, mesh_index, materials):
         gltf_mesh = gltf.data.meshes[mesh_index]
+
         if len(gltf_mesh.primitives) == 1:
             return self.convert_primitive(gltf_mesh.primitives[0], gltf, materials)
+        else:
+            c4d_object = c4d.BaseObject(c4d.Onull)
+            for prim in gltf_mesh.primitives:
+                c4d_mesh = self.convert_primitive(prim, gltf, materials)
+                c4d_mesh.InsertUnder(c4d_object)
+            return c4d_object
 
-        c4d_object = c4d.BaseObject(c4d.Onull)
-        for prim in gltf_mesh.primitives:
-            c4d_mesh = self.convert_primitive(prim, gltf, materials)
-            c4d_mesh.InsertUnder(c4d_object)
+    def convert_joint(self, gltf, nodeidx):
+        gltf_node = gltf.data.nodes[nodeidx]
+        
+        c4d_object = c4d.BaseObject(c4d.Ojoint)
+
+        c4d_object.SetName(gltf_node.name if gltf_node.name else "GLTFJoint")
+
+        c4d_object.SetRotationOrder(5)  # Local XYZ
+        c4d_object.SetQuaternionRotationMode(1, 0)
+
+        if gltf_node.matrix:
+
+            mat = gltf_node.matrix
+            v1 = c4d.Vector(mat[0], mat[1], mat[2])
+            v2 = c4d.Vector(mat[4], mat[5], mat[6])
+            v3 = c4d.Vector(mat[8], mat[9], mat[10])
+            off = c4d.Vector(mat[12], mat[13], mat[14])
+            c4d_mat = c4d.Matrix(off, v1, v2, v3)
+            c4d_object.SetMg(c4d_mat)
+
+            pos = c4d_object.GetAbsPos()
+            rot = c4d_object.GetAbsRot()
+            pos[2] = -pos[2]
+            rot[0] = -rot[0]
+            rot[1] = -rot[1]
+            c4d_object.SetAbsPos(pos)
+            c4d_object.SetAbsRot(rot)
+
+        else:
+            if gltf_node.rotation:
+                c4d_object.SetAbsRot(self.quat_to_eulerxyz(gltf_node.rotation))
+
+            if gltf_node.scale:
+                scale = gltf_node.scale
+                c4d_object.SetAbsScale(c4d.Vector(scale[0], scale[1], scale[2]))
+
+            if gltf_node.translation:
+                tr = gltf_node.translation
+                c4d_object.SetAbsPos(c4d.Vector(tr[0], tr[1], tr[2]))
+
+            pos = c4d_object.GetAbsPos()
+            rot = c4d_object.GetAbsRot()
+
+            # NOT SURE ABOUT THIS !!!!!!!!!!!!!!!!
+            pos[2] = -pos[2]
+            rot[2] = -rot[2]
+
+            c4d_object.SetAbsPos(pos)
+            c4d_object.SetAbsRot(rot)
 
         return c4d_object
+
+    #############################
+    # MATERIALS
+    #############################
+
+    COLOR_BLACK = c4d.Vector(0.0, 0.0, 0.0)
+    COLOR_WHITE = c4d.Vector(1.0, 1.0, 1.0)
 
     def get_texture_path(self):
         return os.path.join(os.path.split(c4d.documents.GetActiveDocument().GetParameter(c4d.DOCUMENT_FILEPATH, c4d.DESCFLAGS_GET_NONE))[0], 'tex')
@@ -674,9 +1299,11 @@ class ImportGLTF(plugins.ObjectData):
             imported_materials[index] = mat
             self.progress_callback("Importing materials", index + 1, len(materials))
 
+        for index in imported_materials:
+            c4d.documents.GetActiveDocument().InsertMaterial(imported_materials[index])
+
         return imported_materials
 
-    # Build an image shader for each image and add it to material channels by index
     def import_gltf_textures(self, gltf):
         dest_textures_path = self.get_texture_path()
         if not os.path.exists(dest_textures_path):
@@ -709,92 +1336,3 @@ class ImportGLTF(plugins.ObjectData):
             self.progress_callback("Importing textures", len(self.gltf_textures), len(gltf.data.images))
 
         print('Imported {} textures'.format(len(self.gltf_textures)))
-
-    def switch_handedness_v3(self, v3):
-        v3[2] = -v3[2]
-
-        return v3
-
-    def quat_to_eulerxyz(self, quat):
-        x, y, z, w = quat
-
-        import math
-        t0 = +2.0 * (w * x + y * z)
-        t1 = +1.0 - 2.0 * (x * x + y * y)
-        X = math.degrees(math.atan2(t0, t1))
-
-        t2 = +2.0 * (w * y - z * x)
-        t2 = +1.0 if t2 > +1.0 else t2
-        t2 = -1.0 if t2 < -1.0 else t2
-        Y = math.degrees(math.asin(t2))
-
-        t3 = +2.0 * (w * z + x * y)
-        t4 = +1.0 - 2.0 * (y * y + z * z)
-        Z = math.degrees(math.atan2(t3, t4))
-
-        return c4d.Vector(math.radians(X), math.radians(Y), math.radians(Z))
-
-    def convert_node(self, gltf, node_idx, materials=None):
-        gltf_node = gltf.data.nodes[node_idx]
-        c4d_object = None
-
-        if gltf_node.mesh is not None:
-            c4d_object = self.convert_mesh(gltf, gltf_node.mesh, c4d_object, materials)
-            if c4d_object is None:
-                return None
-        else:
-            c4d_object = c4d.BaseObject(c4d.Onull)
-
-        c4d_object.SetName(gltf_node.name if gltf_node.name else "GLTFObject")
-        c4d_object.SetRotationOrder(5)  # Local XYZ
-        c4d_mat = c4d.Matrix()
-
-        if gltf_node.matrix:
-            mat = gltf_node.matrix
-            v1 = c4d.Vector(mat[0], mat[1], mat[2])
-            v2 = c4d.Vector(mat[4], mat[5], mat[6])
-            v3 = c4d.Vector(mat[8], mat[9], mat[10])
-            off = c4d.Vector(mat[12], mat[13], mat[14])
-            c4d_mat = c4d.Matrix(off, v1, v2, v3)
-            c4d_object.SetMg(c4d_mat)
-
-            pos = c4d_object.GetAbsPos()
-            rot = c4d_object.GetAbsRot()
-
-            pos[2] = -pos[2]
-
-            rot[0] = -rot[0]
-            rot[1] = -rot[1]
-
-            c4d_object.SetAbsPos(pos)
-            c4d_object.SetAbsRot(rot)
-
-        else:
-            if gltf_node.rotation:
-                c4d_object.SetAbsRot(self.quat_to_eulerxyz(gltf_node.rotation))
-
-            if gltf_node.scale:
-                scale = gltf_node.scale
-                c4d_object.SetAbsScale(c4d.Vector(scale[0], scale[1], scale[2]))
-
-            if gltf_node.translation:
-                tr = gltf_node.translation
-                c4d_object.SetAbsPos(c4d.Vector(tr[0], tr[1], tr[2]))
-
-            pos = c4d_object.GetAbsPos()
-            rot = c4d_object.GetAbsRot()
-
-            pos[0] = pos[0]
-            pos[2] = -pos[2]
-            rot[2] = -rot[2]
-
-            c4d_object.SetAbsPos(pos)
-            c4d_object.SetAbsRot(rot)
-
-        return c4d_object
-
-    def AbortImport(self):
-        pass
-        # if not self.is_done:
-        #   c4d.documents.GetActiveDocument().EndUndo()
-        #   c4d.documents.GetActiveDocument().DoUndo()
