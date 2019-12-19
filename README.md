@@ -16,22 +16,19 @@
 
 First download the **sketchfab-x-y-z.zip** file attached to the [latest release](https://github.com/sketchfab/c4d-plugin/releases/latest) according to your O.S., and extract its content into a directory.
 
-**Note**: It is recommended to rename the directory into "Sketchfab", as this will allow the plugin to be displayed under the name "Sketchfab" instead of "sketchfab-win-1.2.0" for instance.
+**Note**: Make sure to remove any previous installation of Sketchfab plugins. It is also recommended to rename the directory into "Sketchfab", as this will allow the plugin to be displayed under the name "Sketchfab" instead of "sketchfab-win-1.3.0" for instance.
 
-To install the plugin, you should copy the newly extracted directory into one of the folders below (you can also find the **plugins** folder by using the **Open Preferences Folder** in the **Edit -> Preferences** menu).
+To install the plugin, you should copy the newly extracted directory into an adequate directory, before restarting Cinema4D (you will find more information about plugin installation on the [dedicated page of Maxon FAQ](https://support.maxon.net/kb/faq.php?id=52)).
 
-#### Maxon Installation directory (RECOMMENDED)
+#### User Preferences directory
 
-*You might need admin rights to write in /Applications or C:/Program Files*
+You can find your user preferences directory through the **Open Preferences Folder** in the **Edit -> Preferences** menu. From there, just copy the downloaded directory into the **plugins** folder (you might need to create it if it does not exist).
 
-* Windows: C:\Program Files\MAXON\CINEMA 4D R20\plugins
-* OS X:    /Applications/MAXON/CINEMA 4D R20/plugins
+#### Custom directory
 
-#### User preferences directory
+You can also install the plugin in a custom location. To do so, add the path containing the newly extracted directory to the search paths in the **Edit -> Preferences -> Plugins** menu.
 
-* /Users/UserName/Library/Preferences/MAXON/CINEMA 4D R20/plugins
-
-Upon restrting Cinema 4D, the Sketchfab plugin should be available under the "plugins" menu:
+Upon restarting Cinema 4D, the Sketchfab plugin should be available under the "Plugins" (R20) or "Extensions" (R21) menu:
 
 ![menu](https://user-images.githubusercontent.com/52042414/65263442-f9e2ed80-db0c-11e9-96ba-76e7edab1c1d.png)
 
@@ -88,10 +85,6 @@ Please note that although the uploading process can be quite fast (as it entirel
 
 If none of the following description matches your problem, please feel free to [report an issue](#report-an-issue).
 
-#### Animation is not supported (some models might not look good)
-
-Animation data is not yet imported so models might look bad because their objects transforms are not correct, or their pose is not the expected one. Animation import is planned and will come in a futureversion.
-
 #### Model has material using several UV layers
 
 Mutli-UV models are not *yet* supported by this plugin, so models having these properties can look messed up.
@@ -114,7 +107,7 @@ After this, vertex colors should be used for render.
 
 If you feel like you've encountered a bug not listed in the [known issues](#known-issues), or that the plugin lacks an important feature, you can contact us through [Sketchfab's Help Center](https://help.sketchfab.com/hc/en-us/requests/new?type=exporters&subject=Cinema4D+Plugin) (or directly from the plugin through the **Help -> Report an issue** menu).
 
-To help us track a possible error, please try to append the logs of Cinema4D Python console in your message (available in the **Script -> Console** menu)
+To help us track a possible error, please try to append the logs of Cinema4D Python console in your message (available in the **Script -> Console** menu for R20, or **Extensions -> Console** menu for R21).
 
 
 ## Addon development
