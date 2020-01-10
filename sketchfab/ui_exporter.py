@@ -360,14 +360,14 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 			auto_publish = not(self.GetBool(CHK_PUBLISHDRAFT))
 
 			# Error messages
-			if len(title) == 0 or len(title) > 32 or len(description) > 1024:
+			if len(title) == 0 or len(title) > 48 or len(description) > 1024:
 				error_message = ""
 				if len(title) == 0:
-					error_message = "Please enter a name for your model."
-				if len(title) > 32:
-					error_message = "Please enter a name for your model."
+					error_message = "Please enter a title for your model"
+				if len(title) > 48:
+					error_message = "The model title must be less than 48 characters long"
 				if len(description) > 1024:
-					error_message = "Please enter a name for your model."
+					error_message = "The description must be less than 1024 characters long"
 				gui.MessageDialog(error_message, c4d.GEMB_OK)
 				self.Enable(BTN_PUBLISH, True)
 				self.SetTitle(__exporter_title__)
