@@ -15,6 +15,7 @@
 import sys
 import os
 import shutil
+import subprocess
 
 from config import Config
 
@@ -99,6 +100,8 @@ class Utils:
         return 'GLTFModel'
     @staticmethod
     def setup_plugin():
+        if not os.path.exists(Config.SKETCHFAB_TEMP_DIR):
+            os.makedirs(Config.SKETCHFAB_TEMP_DIR)
         if not os.path.exists(Config.SKETCHFAB_THUMB_DIR):
             os.makedirs(Config.SKETCHFAB_THUMB_DIR)
     @staticmethod
