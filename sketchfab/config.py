@@ -19,7 +19,7 @@ from c4d import storage
 
 class Config:
 
-    PLUGIN_VERSION = "1.3.0"
+    PLUGIN_VERSION = "1.3.1"
     PLUGIN_TITLE   = "Sketchfab Plugin"
     PLUGIN_AUTHOR  = "Sketchfab"
     PLUGIN_TWITTER = "@sketchfab"
