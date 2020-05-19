@@ -68,7 +68,6 @@ export_options = {
 	c4d.FBXEXPORT_SPLINES: 1,
 	# Geometry and Materials
 	c4d.FBXEXPORT_SAVE_NORMALS: 1,
-	c4d.FBXEXPORT_TEXTURES: 1,
 	c4d.FBXEXPORT_EMBED_TEXTURES: 1,
 	c4d.FBXEXPORT_FBX_VERSION: c4d.FBX_EXPORTVERSION_NATIVE,
 	# cancel all these one
@@ -78,6 +77,15 @@ export_options = {
 	c4d.FBXEXPORT_SDS_SUBDIVISION: 1,
 	c4d.FBXEXPORT_ASCII: 0
 }
+
+# Take API changes from R22 into account
+# https://developers.maxon.net/docs/Cinema4DPythonSDK/html/misc/changelog/changelog_s22.html
+if c4d.GetC4DVersion() >= 22000:
+	export_options[c4d.FBXEXPORT_BAKE_MATERIALS] = 0
+	export_options[c4d.FBXEXPORT_MATERIALS] = c4d.FBXEXPORT_MATERIALS_PHONGLAMBERT
+else:
+	# In S22+, this becomes enforced by FBXEXPORT_EMBED_TEXTURES
+	export_options[c4d.FBXEXPORT_TEXTURES] = 1
 
 # Globals
 g_uploaded = False
