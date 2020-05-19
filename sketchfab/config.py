@@ -40,7 +40,7 @@ class Config:
 
     # sometimes the path in preferences is empty
     def get_temp_path():
-        return c4d.storage.GeGetC4DPath(c4d.C4D_PATH_PREFS)
+        return c4d.storage.GeGetStartupWritePath()
 
     GITHUB_REPOSITORY_URL = 'https://github.com/sketchfab/c4d-plugin'
     PLUGIN_LATEST_RELEASE = GITHUB_REPOSITORY_URL + '/releases/latest'

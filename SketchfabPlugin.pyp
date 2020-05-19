@@ -35,6 +35,7 @@ if not SKFB_DEPENDENCIES_PATH in sys.path:
     sys.path.insert(0, SKFB_DEPENDENCIES_PATH)
 
 from sketchfab.config import Config
+from sketchfab.utils import Utils
 from sketchfab.ui_importer import *
 from sketchfab.ui_exporter import *
 
@@ -103,6 +104,9 @@ if __name__ == "__main__":
     icon = bitmaps.BaseBitmap()
     iconPath = os.path.join(os.path.split(__file__)[0], "res", "icon.png")
     icon.InitWith(iconPath)
+
+    # Create the necessary directories
+    Utils.setup_plugin()
 
     # Register the importer
     plugins.RegisterCommandPlugin(id=Config.IMPORTER_ID,
