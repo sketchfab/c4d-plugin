@@ -499,6 +499,8 @@ class SkfbModelDialog(gui.GeDialog):
 
 		if not caption:
 			caption = "IMPORT MODEL" if self.skfb_api.is_user_logged() else "You need to be logged in"
+		if self.skfb_model is not None and self.skfb_model.download_size:
+			caption += " (" + self.skfb_model.download_size + ")"
 
 		self.AddButton(id=BTN_IMPORT, flags=c4d.BFH_CENTER | c4d.BFV_CENTER, initw=200, inith=38, name=caption)
 		self.LayoutChanged(GROUP_MODEL_IMPORT)
