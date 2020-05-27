@@ -104,6 +104,8 @@ class Utils:
             os.makedirs(Config.SKETCHFAB_TEMP_DIR)
         if not os.path.exists(Config.SKETCHFAB_THUMB_DIR):
             os.makedirs(Config.SKETCHFAB_THUMB_DIR)
+        if not os.path.exists(Config.SKETCHFAB_MODEL_DIR):
+            os.makedirs(Config.SKETCHFAB_MODEL_DIR)
     @staticmethod
     def get_uid_from_thumbnail_url(thumbnail_url):
         return thumbnail_url.split('/')[4]

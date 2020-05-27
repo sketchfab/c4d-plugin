@@ -494,9 +494,6 @@ class ThreadedSearch(C4DThread):
         if uid not in self.skfb_api.search_results['current']:
             return
 
-        if not os.path.exists(Config.SKETCHFAB_THUMB_DIR):
-            os.makedirs(Config.SKETCHFAB_THUMB_DIR)
-
         preview_path = Utils.build_thumbnail_path(uid)
 
         if os.path.exists(preview_path):
