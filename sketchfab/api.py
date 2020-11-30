@@ -150,7 +150,7 @@ class SketchfabApi:
             user_data = r.json()
             self.display_name = user_data['displayName']
             self.plan_type = user_data['account']
-            self.is_user_pro = self.plan_type != 'basic'
+            self.is_user_pro = self.plan_type not in ['basic', 'plus']
             self.login_callback()
         else:
             self.access_token = ''

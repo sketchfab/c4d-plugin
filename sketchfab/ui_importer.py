@@ -70,6 +70,8 @@ LB_MODEL_ANIMATION_COUNT = 2215
 LB_MODEL_STEP = 2216
 
 EDITXT_SEARCH_QUERY = 2302
+CBOX_SEARCH_DOMAIN = 2303
+CBOX_SEARCH_DOMAIN_ELT = 2304
 
 # Checkboxes
 CHK_MY_MODELS = 2400
@@ -170,15 +172,17 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		self.draw_prev_next()
 		self.GroupEnd()
 
-		self.ScrollGroupBegin(GROUP_RESULTS_SCROLL, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, c4d.SCROLLGROUP_VERT | c4d.SCROLLGROUP_HORIZ | c4d.SCROLLGROUP_AUTOHORIZ | c4d.SCROLLGROUP_AUTOVERT, 200, 200)
-		self.GroupBegin(GROUP_RESULTS, c4d.BFH_SCALEFIT | c4d.BFV_TOP, 6, 4, "Results", c4d.BFV_GRIDGROUP_EQUALCOLS | c4d.BFV_GRIDGROUP_EQUALROWS)
-		self.GroupBorderSpace(6, 2, 6, 2)
-		self.draw_results_ui()
-		self.GroupEnd()
-		self.GroupEnd()
 		
-		if self.GetBool(CHK_MY_MODELS) and not self.skfb_api.is_user_pro:
-			self.draw_upgrade_ui()
+		warning = self.needs_warning()
+		if self.is_initialized and warning:
+			self.draw_warning_ui(warning)
+		else:
+			self.ScrollGroupBegin(GROUP_RESULTS_SCROLL, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, c4d.SCROLLGROUP_VERT | c4d.SCROLLGROUP_HORIZ | c4d.SCROLLGROUP_AUTOHORIZ | c4d.SCROLLGROUP_AUTOVERT, 200, 200)
+			self.GroupBegin(GROUP_RESULTS, c4d.BFH_SCALEFIT | c4d.BFV_TOP, 6, 4, "Results", c4d.BFV_GRIDGROUP_EQUALCOLS | c4d.BFV_GRIDGROUP_EQUALROWS)
+			self.GroupBorderSpace(6, 2, 6, 2)
+			self.draw_results_ui()
+			self.GroupEnd()
+			self.GroupEnd()
 			
 		self.draw_footer()
 
@@ -189,12 +193,14 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 	def draw_search_ui(self):
 		self.LayoutFlushGroup(GROUP_QUERY)
 
-		mymodels_caption = 'My models ' + str('(PRO)' if not self.skfb_api.is_user_pro else '')
 		self.AddStaticText(id=LB_SEARCH_QUERY, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=90, inith=TEXT_WIDGET_HEIGHT, name=" Search: ")
+		self.AddComboBox(id=CBOX_SEARCH_DOMAIN, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=150, inith=TEXT_WIDGET_HEIGHT)
+		for index, category in enumerate(Config.SKETCHFAB_SEARCH_DOMAINS):
+			self.AddChild(id=CBOX_SEARCH_DOMAIN, subid=CBOX_SEARCH_DOMAIN_ELT + index, child=category[2])
+		self.SetInt32(CBOX_SEARCH_DOMAIN, CBOX_SEARCH_DOMAIN_ELT)
 		self.AddEditText(id=EDITXT_SEARCH_QUERY, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=500, inith=TEXT_WIDGET_HEIGHT)
 		self.AddButton(id=BTN_SEARCH, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Search")
-		self.AddCheckbox(id=CHK_MY_MODELS, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=250, inith=TEXT_WIDGET_HEIGHT, name=mymodels_caption)
-		self.Enable(CHK_MY_MODELS, int(self.skfb_api.is_user_logged()))
+		self.Enable(CBOX_SEARCH_DOMAIN, int(self.skfb_api.is_user_logged()))
 
 		self.LayoutChanged(GROUP_QUERY)
 
@@ -241,16 +247,43 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 
 		return True
 
+	def needs_warning(self):
+		"""
+		returns 0 if no warning is needed, the warning code otherwise:
+		1 - Normal search, no results
+		2 - Own models but not pro
+		3 - No Store purchases
+		"""
+
+		if not self.result_valid():
+			return 0
+
+		search_domain = self.GetInt32(CBOX_SEARCH_DOMAIN) - CBOX_SEARCH_DOMAIN_ELT
+		if search_domain == 1 and not self.skfb_api.is_user_pro:
+			return 2
+
+		n_results = len(self.skfb_api.search_results['current'])
+		if n_results == 0:
+			if search_domain in [0,1]:
+				return 1
+			else:
+				return 3
+		else:
+			return 0
+
 	def resultGroupWillRedraw(self):
 		self.draw_prev_next()
 		self.draw_results_ui()
-		if self.GetBool(CHK_MY_MODELS) and not self.skfb_api.is_user_pro:
-			self.draw_upgrade_ui()
 
 	def draw_results_ui(self):
 		self.LayoutFlushGroup(GROUP_RESULTS)
 		if not self.result_valid():
 			return
+
+		# Warning message
+		warning = self.needs_warning()
+		if warning:
+			self.draw_warning_ui(warning)
 
 		for index, skfb_model in enumerate(self.skfb_api.search_results['current'].values()):
 			image_container = c4d.BaseContainer()  # Create a new container to store the image we will load for the button later on
@@ -300,7 +333,8 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		self.skfb_api.search(Config.DEFAULT_SEARCH)
 
 	def trigger_search(self):
-		final_query = Config.SKETCHFAB_OWN_MODELS_SEARCH if self.GetBool(CHK_MY_MODELS) else Config.SKETCHFAB_SEARCH
+		search_domain_str = Config.SKETCHFAB_SEARCH_DOMAINS[self.GetInt32(CBOX_SEARCH_DOMAIN) - CBOX_SEARCH_DOMAIN_ELT][0]
+		final_query = Config.SKETCHFAB_API + '/v3' + search_domain_str
 
 		if self.GetString(EDITXT_SEARCH_QUERY):
 			final_query = final_query + '&q={}'.format(self.GetString(EDITXT_SEARCH_QUERY))
@@ -366,17 +400,18 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 
 		if id in [
 			BTN_SEARCH, 
+			CBOX_SEARCH_DOMAIN,
 			CBOX_CATEGORY, 
 			CBOX_SORT_BY,
 			CBOX_FACE_COUNT,
 			CHK_IS_PBR, 
 			CHK_IS_ANIMATED, 
-			CHK_IS_STAFFPICK, 
-			CHK_MY_MODELS]:
+			CHK_IS_STAFFPICK]:
 			trigger_search = True
 
-		if id == CHK_MY_MODELS:
-			self.reset_filters(self.GetBool(CHK_MY_MODELS))
+		if id == CBOX_SEARCH_DOMAIN:
+			self.Enable(GROUP_FILTERS, (self.GetInt32(CBOX_SEARCH_DOMAIN) - CBOX_SEARCH_DOMAIN_ELT) != 2)
+			self.refresh_filters_ui()
 
 		if trigger_search:
 			self.trigger_search()
