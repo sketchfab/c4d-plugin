@@ -12,8 +12,8 @@ Full text of the CC0 license:
 
 import struct
 from io import BytesIO
-from . import Image, ImageFile
 
+from . import Image, ImageFile
 
 # Magic ("DDS ")
 DDS_MAGIC = 0x20534444
@@ -61,8 +61,7 @@ DDS_LUMINANCEA = DDPF_LUMINANCE | DDPF_ALPHAPIXELS
 DDS_ALPHA = DDPF_ALPHA
 DDS_PAL8 = DDPF_PALETTEINDEXED8
 
-DDS_HEADER_FLAGS_TEXTURE = (DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH |
-                            DDSD_PIXELFORMAT)
+DDS_HEADER_FLAGS_TEXTURE = DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH | DDSD_PIXELFORMAT
 DDS_HEADER_FLAGS_MIPMAP = DDSD_MIPMAPCOUNT
 DDS_HEADER_FLAGS_VOLUME = DDSD_DEPTH
 DDS_HEADER_FLAGS_PITCH = DDSD_PITCH
@@ -107,10 +106,10 @@ class DdsImageFile(ImageFile.ImageFile):
     def _open(self):
         magic, header_size = struct.unpack("<II", self.fp.read(8))
         if header_size != 124:
-            raise IOError("Unsupported header size %r" % (header_size))
+            raise OSError(f"Unsupported header size {repr(header_size)}")
         header_bytes = self.fp.read(header_size - 4)
         if len(header_bytes) != 120:
-            raise IOError("Incomplete header: %s bytes" % len(header_bytes))
+            raise OSError(f"Incomplete header: {len(header_bytes)} bytes")
         header = BytesIO(header_bytes)
 
         flags, height, width = struct.unpack("<3I", header.read(12))
@@ -123,15 +122,15 @@ class DdsImageFile(ImageFile.ImageFile):
         # pixel format
         pfsize, pfflags = struct.unpack("<2I", header.read(8))
         fourcc = header.read(4)
-        bitcount, = struct.unpack("<I", header.read(4))
+        (bitcount,) = struct.unpack("<I", header.read(4))
         masks = struct.unpack("<4I", header.read(16))
         if pfflags & 0x40:
             # DDPF_RGB - Texture contains uncompressed RGB data
             masks = {mask: ["R", "G", "B", "A"][i] for i, mask in enumerate(masks)}
             rawmode = ""
             if bitcount == 32:
-                rawmode += masks[0xff000000]
-            rawmode += masks[0xff0000] + masks[0xff00] + masks[0xff]
+                rawmode += masks[0xFF000000]
+            rawmode += masks[0xFF0000] + masks[0xFF00] + masks[0xFF]
 
             self.tile = [("raw", (0, 0) + self.size, 0, (rawmode, 0, 1))]
         else:
@@ -151,24 +150,21 @@ class DdsImageFile(ImageFile.ImageFile):
                 # ignoring flags which pertain to volume textures and cubemaps
                 dxt10 = BytesIO(self.fp.read(20))
                 dxgi_format, dimension = struct.unpack("<II", dxt10.read(8))
-                if dxgi_format in (DXGI_FORMAT_BC7_TYPELESS,
-                                   DXGI_FORMAT_BC7_UNORM):
+                if dxgi_format in (DXGI_FORMAT_BC7_TYPELESS, DXGI_FORMAT_BC7_UNORM):
                     self.pixel_format = "BC7"
                     n = 7
                 elif dxgi_format == DXGI_FORMAT_BC7_UNORM_SRGB:
                     self.pixel_format = "BC7"
-                    self.im_info["gamma"] = 1/2.2
+                    self.info["gamma"] = 1 / 2.2
                     n = 7
                 else:
-                    raise NotImplementedError("Unimplemented DXGI format %d" %
-                                              (dxgi_format))
+                    raise NotImplementedError(
+                        f"Unimplemented DXGI format {dxgi_format}"
+                    )
             else:
-                raise NotImplementedError("Unimplemented pixel format %r" %
-                                          (fourcc))
+                raise NotImplementedError(f"Unimplemented pixel format {repr(fourcc)}")
 
-            self.tile = [
-                ("bcn", (0, 0) + self.size, data_start, (n))
-            ]
+            self.tile = [("bcn", (0, 0) + self.size, data_start, (n))]
 
     def load_seek(self, pos):
         pass
