@@ -386,9 +386,10 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 				if self.model_dialog:
 					self.model_dialog.Close()
 
-				self.skfb_api.request_model_info(self.skfb_api.search_results['current'].values()[i].uid)
+				model = list(self.skfb_api.search_results['current'].values())[i]
+				self.skfb_api.request_model_info(model.uid)
 				self.model_dialog = SkfbModelDialog()
-				self.model_dialog.SetModelInfo(self.skfb_api.search_results['current'].values()[i], self.skfb_api)
+				self.model_dialog.SetModelInfo(model, self.skfb_api)
 				self.model_dialog.Open(dlgtype=c4d.DLG_TYPE_ASYNC, defaultw=450, defaulth=300, xpos=-1, ypos=-1)
 
 		return True

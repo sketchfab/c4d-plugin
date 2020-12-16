@@ -319,9 +319,9 @@ class ImportGLTF(plugins.ObjectData):
 
                 for c in range(3):
                     low_byte, high_byte = float2bytes(component[c])
-
-                    normal_buffer[normal_tag.GetDataSize() * polygon + v * vector_size + c * component_size + 0] = chr(low_byte)
-                    normal_buffer[normal_tag.GetDataSize() * polygon + v * vector_size + c * component_size + 1] = chr(high_byte)
+                    idx = normal_tag.GetDataSize() * polygon + v * vector_size + c * component_size + 0
+                    normal_buffer[idx + 0] = low_byte
+                    normal_buffer[idx + 1] = high_byte
 
         def parse_normals():
             normal = []
@@ -412,7 +412,7 @@ class ImportGLTF(plugins.ObjectData):
             verts.append(self.switch_handedness_v3(vect))
 
         indices = BinaryData.get_data_from_accessor(gltf, prim.indices)
-        nb_poly = len(indices) / 3
+        nb_poly = int(len(indices) / 3)
 
         c4d_mesh = c4d.PolygonObject(nb_vertices, nb_poly)
         c4d_mesh.SetAllPoints(verts)

@@ -102,7 +102,7 @@ class SketchfabApi:
 
     def login(self, email, password):
         self.email = email
-        url = '{}&username={}&password={}'.format(Config.SKETCHFAB_OAUTH, urllib.quote(email), urllib.quote(password))
+        url = '{}&username={}&password={}'.format(Config.SKETCHFAB_OAUTH, urllib.parse.quote(email), urllib.parse.quote(password))
         requests.post(url, hooks={'response': self.handle_login})
 
     def build_headers(self):
