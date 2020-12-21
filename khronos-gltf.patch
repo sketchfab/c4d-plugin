@@ -14,24 +14,6 @@ index 95a9f9e..c19ae1b 100644
 
 
  def from_int(x):
-@@ -71,9 +71,15 @@ def from_float(x):
-     assert isinstance(x, (float, int)) and not isinstance(x, bool)
-     return float(x)
-
--
- def from_str(x):
--    assert isinstance(x, str)
-+    res = ""
-+    if "c4d" in sys.modules: # Cinema4D
-+        res = isinstance(x, str) or isinstance(x, unicode)
-+    elif "bpy" in sys.modules: # Blender, be explicit
-+        res = isinstance(x, str)
-+    else: # Other cases
-+        res = isinstance(x, str)
-+    assert res
-     return x
-
-
 diff --git a/addons/io_scene_gltf2/io/com/gltf2_io_debug.py b/addons/io_scene_gltf2/io/com/gltf2_io_debug.py
 index 51b825a..ccf45e5 100644
 --- a/addons/io_scene_gltf2/io/com/gltf2_io_debug.py
@@ -79,14 +61,10 @@ index 16a4242..02fd847 100644
 -        self.import_settings = import_settings
          self.buffers = {}
 
-+        """ DIFF
-+        self.import_settings = import_settings
-         if 'loglevel' not in self.import_settings.keys():
-             self.import_settings['loglevel'] = logging.ERROR
+-        if 'loglevel' not in self.import_settings.keys():
+-            self.import_settings['loglevel'] = logging.ERROR
 -
-         log = Log(import_settings['loglevel'])
-+        """
-+
+-        log = Log(import_settings['loglevel'])
 +        log = Log(loglevel)
 +
          self.log = log.logger

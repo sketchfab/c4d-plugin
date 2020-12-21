@@ -19,7 +19,7 @@ from c4d import storage
 
 class Config:
 
-    PLUGIN_VERSION = "1.3.1"
+    PLUGIN_VERSION = "1.4.0"
     PLUGIN_TITLE   = "Sketchfab Plugin"
     PLUGIN_AUTHOR  = "Sketchfab"
     PLUGIN_TWITTER = "@sketchfab"
@@ -55,6 +55,7 @@ class Config:
     SKETCHFAB_MODEL = SKETCHFAB_API + '/v3/models'
     SKETCHFAB_OWN_MODELS_SEARCH = SKETCHFAB_API + '/v3/me/search?type=models&downloadable=true'
     SKETCHFAB_PLANS = 'https://sketchfab.com/plans?utm_source=c4d-plugin&utm_medium=plugin&utm_campaign=download-api-pro-cta'
+    SKETCHFAB_STORE = 'https://sketchfab.com/store?utm_source=c4d-plugin&utm_medium=plugin&utm_campaign=store-cta'
     SKETCHFAB_REPORT_URL = 'https://help.sketchfab.com/hc/en-us/requests/new?type=exporters&subject=Cinema4D+Plugin'
     SKETCHFAB_SIGNUP = 'https://sketchfab.com/signup'
 
@@ -70,6 +71,10 @@ class Config:
     SKETCHFAB_THUMB_DIR = os.path.join(SKETCHFAB_TEMP_DIR, 'thumbnails')
     SKETCHFAB_MODEL_DIR = os.path.join(SKETCHFAB_TEMP_DIR, 'imports')
     SKETCHFAB_CACHE_FILE = os.path.join(SKETCHFAB_TEMP_DIR, '.sketchfab')
+
+    SKETCHFAB_SEARCH_DOMAINS = (('/search?type=models&downloadable=true', 'All site', 'All site'),
+                                ('/me/search?type=models&downloadable=true', 'My models (PRO)', 'My models (PRO)'),
+                                ('/me/models/purchases?', 'Store purchases', 'Store purchases'))
 
     SKETCHFAB_CATEGORIES = (('ALL', 'All categories', 'All categories'),
                             ('animals-pets', 'Animals & Pets', 'Animals and Pets'),

@@ -21,7 +21,7 @@ GROUP_LOGIN = 2001
 GROUP_FOOTER = 2011
 GROUP_FOOTER_VERSION = 2012
 GROUP_FOOTER_CONTACT = 2013
-GROUP_UPGRADE_PRO = 2010
+GROUP_WARNING = 2010
 
 BTN_CONNECT_SKETCHFAB = 2108
 BTN_LOGIN = 2105
@@ -30,9 +30,9 @@ BTN_DOCUMENTATION = 2111
 BTN_REPORT = 2112
 BTN_OPEN_CACHE = 2114
 BTN_UPGRADE_PLUGIN = 2110
-BTN_UPGRADE_PRO = 2109
+BTN_WARNING = 2109
 
-LB_UPGRADE_PRO = 2201
+LB_WARNING = 2201
 LB_CONNECT_STATUS = 2205
 LB_LOGIN_EMAIL = 2206
 LB_LOGIN_PASSWORD = 2207
@@ -78,6 +78,7 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 	redraw_login   = False
 	status_widget  = None
 	is_initialized = False
+	cta_link       = None
 	
 	def initialize(self):
 		self.is_initialized = True
@@ -137,26 +138,33 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 
 		self.LayoutChanged(GROUP_FOOTER_VERSION)
 
-	def draw_upgrade_ui(self):
-		
-		self.LayoutFlushGroup(GROUP_UPGRADE_PRO)
+	def draw_warning_ui(self, _type):
+		"""
+		1 - Normal search, no results
+		2 - Own models but not pro
+		3 - No Store purchases
+		"""
+		msg, btn = u'No results found', None
+		if _type == 2:
+			msg = u'Access your personal library of 3D models'
+			btn = 'Upgrade to PRO'
+			self.cta_link = Config.SKETCHFAB_PLANS
+		elif _type == 3:
+			msg = u'You did not purchase any model yet'
+			btn = 'Visit the Store'
+			self.cta_link = Config.SKETCHFAB_STORE
 
-		self.AddStaticText(id=LB_UPGRADE_PRO, flags=c4d.BFH_CENTER | c4d.BFV_TOP,
-						   initw=500,
-						   name=u'Gain full API access to your personal library of 3D models')
-
-		self.AddButton(id=BTN_UPGRADE_PRO, flags=c4d.BFH_CENTER | c4d.BFV_CENTER, initw=150, inith=TEXT_WIDGET_HEIGHT * 2, name="Upgrade To Pro")
-
-		self.LayoutChanged(GROUP_UPGRADE_PRO)
-		
-	def draw_footer(self):
-
-		self.GroupBegin(GROUP_UPGRADE_PRO, c4d.BFH_CENTER | c4d.BFV_BOTTOM, 1, 2, "Upgrade")
-		self.GroupBorderSpace(6, 6, 6, 6)
-		#self.draw_upgrade_ui()
+		self.GroupBegin(GROUP_WARNING, c4d.BFH_CENTER | c4d.BFV_CENTER, 6, 4, "Warning")
+		self.LayoutFlushGroup(GROUP_WARNING)
+		self.GroupBorderSpace(6, 2, 6, 2)
+		self.AddStaticText(id=LB_WARNING, flags=c4d.BFH_CENTER | c4d.BFV_CENTER, initw=500, name=msg)
+		if btn:
+			self.AddButton(id=BTN_WARNING, flags=c4d.BFH_CENTER | c4d.BFV_CENTER, initw=150, inith=TEXT_WIDGET_HEIGHT * 2, name=btn)
+		self.LayoutChanged(GROUP_WARNING)
 		self.GroupEnd()
-		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
 
+	def draw_footer(self):
+		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
 		self.GroupBegin(GROUP_FOOTER, c4d.BFH_FIT | c4d.BFV_CENTER, 3, 1, "Footer")
 
 		self.LayoutFlushGroup(GROUP_FOOTER)
@@ -253,8 +261,8 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 		if id == BTN_OPEN_CACHE:
 			Utils.open_directory('{}'.format(Config.SKETCHFAB_TEMP_DIR))
 
-		if id == BTN_UPGRADE_PRO:
-			webbrowser.open(Config.SKETCHFAB_PLANS)
+		if id == BTN_WARNING:
+			webbrowser.open(self.cta_link)
 
 		if id == BTN_REPORT:
 			webbrowser.open(Config.SKETCHFAB_REPORT_URL)

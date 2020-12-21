@@ -102,7 +102,7 @@ class SketchfabApi:
 
     def login(self, email, password):
         self.email = email
-        url = '{}&username={}&password={}'.format(Config.SKETCHFAB_OAUTH, urllib.quote(email), urllib.quote(password))
+        url = '{}&username={}&password={}'.format(Config.SKETCHFAB_OAUTH, urllib.parse.quote(email), urllib.parse.quote(password))
         requests.post(url, hooks={'response': self.handle_login})
 
     def build_headers(self):
@@ -150,7 +150,7 @@ class SketchfabApi:
             user_data = r.json()
             self.display_name = user_data['displayName']
             self.plan_type = user_data['account']
-            self.is_user_pro = self.plan_type != 'basic'
+            self.is_user_pro = self.plan_type not in ['basic', 'plus']
             self.login_callback()
         else:
             self.access_token = ''

@@ -17,13 +17,14 @@
 
 
 from . import Image, ImageFile, ImagePalette
-from ._binary import i8, i16le as i16, i32le as i32, o8
-
-__version__ = "0.2"
-
+from ._binary import i8
+from ._binary import i16le as i16
+from ._binary import i32le as i32
+from ._binary import o8
 
 #
 # decoder
+
 
 def _accept(prefix):
     return len(prefix) >= 6 and i16(prefix[4:6]) in [0xAF11, 0xAF12]
@@ -32,6 +33,7 @@ def _accept(prefix):
 ##
 # Image plugin for the FLI/FLC animation format.  Use the <b>seek</b>
 # method to load individual frames.
+
 
 class FliImageFile(ImageFile.ImageFile):
 
@@ -43,14 +45,16 @@ class FliImageFile(ImageFile.ImageFile):
 
         # HEAD
         s = self.fp.read(128)
-        magic = i16(s[4:6])
-        if not (magic in [0xAF11, 0xAF12] and
-                i16(s[14:16]) in [0, 3] and  # flags
-                s[20:22] == b"\x00\x00"):  # reserved
+        if not (
+            _accept(s)
+            and i16(s[14:16]) in [0, 3]  # flags
+            and s[20:22] == b"\x00\x00"  # reserved
+        ):
             raise SyntaxError("not an FLI/FLC file")
 
         # frames
-        self.__framecount = i16(s[6:8])
+        self.n_frames = i16(s[6:8])
+        self.is_animated = self.n_frames > 1
 
         # image characteristics
         self.mode = "P"
@@ -58,6 +62,7 @@ class FliImageFile(ImageFile.ImageFile):
 
         # animation speed
         duration = i32(s[16:20])
+        magic = i16(s[4:6])
         if magic == 0xAF11:
             duration = (duration * 1000) // 70
         self.info["duration"] = duration
@@ -82,7 +87,7 @@ class FliImageFile(ImageFile.ImageFile):
             elif i16(s[4:6]) == 4:
                 self._palette(palette, 0)
 
-        palette = [o8(r)+o8(g)+o8(b) for (r, g, b) in palette]
+        palette = [o8(r) + o8(g) + o8(b) for (r, g, b) in palette]
         self.palette = ImagePalette.raw("RGB", b"".join(palette))
 
         # set things up to decode first frame
@@ -104,18 +109,10 @@ class FliImageFile(ImageFile.ImageFile):
             s = self.fp.read(n * 3)
             for n in range(0, len(s), 3):
                 r = i8(s[n]) << shift
-                g = i8(s[n+1]) << shift
-                b = i8(s[n+2]) << shift
+                g = i8(s[n + 1]) << shift
+                b = i8(s[n + 2]) << shift
                 palette[i] = (r, g, b)
                 i += 1
-
-    @property
-    def n_frames(self):
-        return self.__framecount
-
-    @property
-    def is_animated(self):
-        return self.__framecount > 1
 
     def seek(self, frame):
         if not self._seek_check(frame):
@@ -136,7 +133,7 @@ class FliImageFile(ImageFile.ImageFile):
             self.load()
 
         if frame != self.__frame + 1:
-            raise ValueError("cannot seek to frame %d" % frame)
+            raise ValueError(f"cannot seek to frame {frame}")
         self.__frame = frame
 
         # move to next frame
@@ -150,7 +147,7 @@ class FliImageFile(ImageFile.ImageFile):
         framesize = i32(s)
 
         self.decodermaxblock = framesize
-        self.tile = [("fli", (0, 0)+self.size, self.__offset, None)]
+        self.tile = [("fli", (0, 0) + self.size, self.__offset, None)]
 
         self.__offset += framesize
 
