@@ -22,6 +22,7 @@ GROUP_FOOTER = 2011
 GROUP_FOOTER_VERSION = 2012
 GROUP_FOOTER_CONTACT = 2013
 GROUP_WARNING = 2010
+GROUP_ORGANIZATION = 2014
 
 BTN_CONNECT_SKETCHFAB = 2108
 BTN_LOGIN = 2105
@@ -31,6 +32,7 @@ BTN_REPORT = 2112
 BTN_OPEN_CACHE = 2114
 BTN_UPGRADE_PLUGIN = 2110
 BTN_WARNING = 2109
+BTN_LEARN_TEAMS = 2115
 
 LB_WARNING = 2201
 LB_CONNECT_STATUS = 2205
@@ -38,9 +40,14 @@ LB_LOGIN_EMAIL = 2206
 LB_LOGIN_PASSWORD = 2207
 LB_PLUGIN_VERSION = 2208
 LB_CONNECT_STATUS_CONNECTED = 2204
+LB_LEARN_TEAMS = 2209
+LB_USE_ORGANIZATION = 2210
 
 EDITXT_LOGIN_EMAIL = 2300
 EDITXT_LOGIN_PASSWORD = 2301
+
+CBOX_ORGANIZATION = 2400
+CBOX_ORGANIZATION_ELT = 2401
 
 TEXT_WIDGET_HEIGHT = 10
 
@@ -79,6 +86,7 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 	status_widget  = None
 	is_initialized = False
 	cta_link       = None
+	org_changed    = False
 	
 	def initialize(self):
 		self.is_initialized = True
@@ -100,9 +108,10 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 		if not self.is_initialized:
 			self.AddButton(id=BTN_CONNECT_SKETCHFAB, flags=c4d.BFH_CENTER | c4d.BFV_BOTTOM, initw=350, inith=TEXT_WIDGET_HEIGHT, name="Connect to Sketchfab")
 		else:
+			# Login/logout button with mail and password fields
 			if self.skfb_api.is_user_logged():
 				self.AddStaticText(id=LB_CONNECT_STATUS, flags=c4d.BFH_LEFT, initw=0, inith=0, name=u"Connected as {}".format(self.skfb_api.display_name))
-				self.AddButton(id=BTN_CONNECT_SKETCHFAB, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Logout")
+				self.AddButton(id=BTN_CONNECT_SKETCHFAB, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Logout")	
 			else:
 				self.AddStaticText(id=LB_LOGIN_EMAIL, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Email:")
 				self.AddEditText(id=EDITXT_LOGIN_EMAIL, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=350, inith=TEXT_WIDGET_HEIGHT)
@@ -112,7 +121,27 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 
 		# Little hack to get username set in UI
 		self.SetString(LB_CONNECT_STATUS, u"Connected as {}".format(self.skfb_api.display_name))
-		self.LayoutChanged(GROUP_LOGIN)	
+		self.LayoutChanged(GROUP_LOGIN) 
+
+		self.draw_organization_ui()
+
+	def draw_organization_ui(self):
+
+		if self.skfb_api.is_user_logged():
+			self.LayoutFlushGroup(GROUP_ORGANIZATION)
+			# Organization or not, and if yes, define the current organization
+			if self.skfb_api.user_orgs:
+				self.AddStaticText(id=LB_USE_ORGANIZATION, flags=c4d.BFH_LEFT, initw=0, inith=0, name=u"Use the plugin as an organization member ?")
+				
+				self.AddComboBox(id=CBOX_ORGANIZATION, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=150, inith=TEXT_WIDGET_HEIGHT)
+				self.AddChild(id=CBOX_ORGANIZATION, subid=CBOX_ORGANIZATION_ELT + 0, child="Personal profile")
+				for index, org in enumerate(self.skfb_api.user_orgs):
+					self.AddChild(id=CBOX_ORGANIZATION, subid=CBOX_ORGANIZATION_ELT + index + 1, child=org["displayName"])
+				self.SetInt32(CBOX_ORGANIZATION, CBOX_ORGANIZATION_ELT)
+			else:
+				self.AddStaticText(id=LB_LEARN_TEAMS, flags=c4d.BFH_LEFT, initw=0, inith=0, name=u"You are not part of an Organization.")
+				self.AddButton(id=BTN_LEARN_TEAMS, flags=c4d.BFH_RIGHT | c4d.BFV_BOTTOM, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Learn more")
+			self.LayoutChanged(GROUP_ORGANIZATION)	
 
 	def refresh_version_ui(self):
 		self.draw_version_ui()
@@ -222,10 +251,20 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 		self.GroupBegin(id=GROUP_LOGIN,
 						flags=c4d.BFH_CENTER,
 						cols=7,
-						rows=1,
+						rows=2,
 						title="Login",
 						groupflags=c4d.BORDER_NONE | c4d.BFV_GRIDGROUP_EQUALCOLS | c4d.BFV_GRIDGROUP_EQUALROWS)
 		self.draw_login_ui()
+		self.GroupEnd()
+
+		# Use plugin as an org member
+		self.GroupBegin(id=GROUP_ORGANIZATION,
+						flags=c4d.BFH_CENTER,
+						cols=2,
+						rows=1,
+						title="Use as org member",
+						groupflags=c4d.BORDER_NONE | c4d.BFV_GRIDGROUP_EQUALCOLS | c4d.BFV_GRIDGROUP_EQUALROWS)
+		self.draw_organization_ui()
 		self.GroupEnd()
 
 		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
@@ -246,8 +285,8 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 		if id == BTN_LOGIN:
 			self.skfb_api.login(self.GetString(EDITXT_LOGIN_EMAIL), self.GetString(EDITXT_LOGIN_PASSWORD))
 
-		#if id == BTN_WEB:
-		#	Utilities.ESOpen_website(Config.SKETCHFAB_URL)
+		if id == BTN_LEARN_TEAMS:
+			webbrowser.open(Config.SKETCHFAB_TEAMS)
 
 		if id == BTN_DOCUMENTATION:
 			webbrowser.open(Config.PLUGIN_LATEST_RELEASE)
@@ -266,3 +305,14 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 
 		if id == BTN_REPORT:
 			webbrowser.open(Config.SKETCHFAB_REPORT_URL)
+
+		if id == CBOX_ORGANIZATION:
+			# Update data related to orgs
+			organization = self.GetInt32(CBOX_ORGANIZATION) - CBOX_ORGANIZATION_ELT
+			if organization == 0:
+				self.skfb_api.use_org_profile = False
+				self.skfb_api.active_org = None
+			else:
+				self.skfb_api.use_org_profile = True
+				self.skfb_api.active_org = self.skfb_api.user_orgs[organization - 1]
+			self.org_changed = True

@@ -59,6 +59,7 @@ class Config:
     SKETCHFAB_STORE = 'https://sketchfab.com/store?utm_source=c4d-plugin&utm_medium=plugin&utm_campaign=store-cta'
     SKETCHFAB_REPORT_URL = 'https://help.sketchfab.com/hc/en-us/requests/new?type=exporters&subject=Cinema4D+Plugin'
     SKETCHFAB_SIGNUP = 'https://sketchfab.com/signup'
+    SKETCHFAB_TEAMS = 'https://sketchfab.com/features/teams'
 
     DEFAULT_FLAGS = '&staffpicked=true&sort_by=-publishedAt&min_face_count=1'
     DEFAULT_SEARCH = SKETCHFAB_SEARCH + \

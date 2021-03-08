@@ -79,6 +79,7 @@ class SketchfabApi:
         requests.get(Config.SKETCHFAB_ME, headers=self.headers, hooks={'response': self.parse_user_info})
 
     def request_user_orgs(self):
+        self.user_orgs = []
         requests.get(Config.SKETCHFAB_ME + "/orgs", headers=self.headers, hooks={'response': self.parse_orgs_info})
 
     def get_sketchfab_model(self, uid):
@@ -95,6 +96,7 @@ class SketchfabApi:
 
             self.build_headers()
             self.request_user_info()
+            self.request_user_orgs()
 
         else:
             print('Cannot login.\n{}'.format(r.json()))
