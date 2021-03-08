@@ -53,6 +53,7 @@ class Config:
     SKETCHFAB_API = 'https://api.sketchfab.com'
     SKETCHFAB_SEARCH = SKETCHFAB_API + '/v3/search?type=models&downloadable=true'
     SKETCHFAB_MODEL = SKETCHFAB_API + '/v3/models'
+    SKETCHFAB_ORGS = SKETCHFAB_API + '/v3/orgs'
     SKETCHFAB_OWN_MODELS_SEARCH = SKETCHFAB_API + '/v3/me/search?type=models&downloadable=true'
     SKETCHFAB_PLANS = 'https://sketchfab.com/plans?utm_source=c4d-plugin&utm_medium=plugin&utm_campaign=download-api-pro-cta'
     SKETCHFAB_STORE = 'https://sketchfab.com/store?utm_source=c4d-plugin&utm_medium=plugin&utm_campaign=store-cta'
