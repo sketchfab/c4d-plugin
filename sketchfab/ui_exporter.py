@@ -50,6 +50,10 @@ EDITXT_THUMB_SRC_PATH = 100015
 EDITXT_PASSWORD = 100016
 CHK_ANIMATION = 100017
 CHK_PUBLISHDRAFT = 100018
+CBOX_PROJECT = 100019
+CBOX_PROJECT_ELT = 100020
+TXT_PASSWORD = 100021
+TXT_PROJECT = 100022
 
 GROUP_WRAPPER = 20000
 GROUP_ONE = 20001
@@ -58,6 +62,7 @@ GROUP_THREE = 20003
 GROUP_FOUR = 20004
 GROUP_FIVE = 20005
 GROUP_SIX = 20006
+GROUP_PROJECT = 20007
 
 # Constants
 FBX20142 = 1026370
@@ -143,11 +148,16 @@ class PublishModelThread(c4d.threading.C4DThread):
 		# Zip the temporary directory content
 		shutil.make_archive(zipName, 'zip', exportDirectory)
 
+		# If using an org, modify the url and data with the selected project
+		url = Config.SKETCHFAB_MODEL
+		if self.skfb_api.use_org_profile:
+			url = "{}/{}/models".format(Config.SKETCHFAB_ORGS, self.skfb_api.active_org["uid"])
+
 		# Do the request
 		_headers = self.skfb_api.headers
 		try:
 			r = requests.post(
-				Config.SKETCHFAB_MODEL,
+				url,
 				data    = self.data,
 				files   = {"modelFile": open(zipName + ".zip", 'rb')},
 				headers = _headers
@@ -214,6 +224,15 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 	def draw_model_properties(self):
 		docname = c4d.documents.GetActiveDocument().GetDocumentName()
 
+		self.AddStaticText(id=TXT_PROJECT, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Export to project:")
+		self.AddComboBox(id=CBOX_PROJECT, flags=c4d.BFH_RIGHT | c4d.BFH_SCALEFIT, initw=0, inith=0)
+		if self.skfb_api.use_org_profile:
+			for index, project in enumerate(self.skfb_api.active_org["projects"]):
+				self.AddChild(id=CBOX_PROJECT, subid=CBOX_PROJECT_ELT + index, child=project["name"])
+		self.SetInt32(CBOX_PROJECT, CBOX_PROJECT_ELT)
+		self.Enable(TXT_PROJECT, False)
+		self.Enable(CBOX_PROJECT, False)
+
 		self.AddStaticText(id=TXT_MODEL_NAME, flags=c4d.BFH_LEFT, initw=0, inith=0, name="Model name:")
 		self.AddEditText(id=EDITXT_MODEL_TITLE, flags=c4d.BFH_SCALEFIT, initw=0, inith=0)
 		self.SetString(EDITXT_MODEL_TITLE, docname)
@@ -231,14 +250,16 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 
 	def draw_private_options(self):
 		self.LayoutFlushGroup(GROUP_FIVE)
-		self.AddCheckbox(id=CHK_PRIVATE, flags=c4d.BFH_SCALEFIT | c4d.BFH_LEFT,
-						 initw=0, inith=0, name="Private Model (Pro User Only)")
-		self.AddStaticText(id=0, flags=c4d.BFH_LEFT,
-						   initw=0, inith=0, name="Password (optional):    ")
-		self.AddEditText(id=EDITXT_PASSWORD, flags=c4d.BFH_SCALEFIT,
-						 initw=0, inith=0, editflags=c4d.EDITTEXT_PASSWORD)
 		self.AddCheckbox(id=CHK_PUBLISHDRAFT, flags=c4d.BFH_LEFT,
 						 initw=0, inith=0, name="Publish as a draft (not visible to public immediately)")
+		self.AddCheckbox(id=CHK_PRIVATE, flags=c4d.BFH_SCALEFIT | c4d.BFH_LEFT,
+						 initw=0, inith=0, name="Private Model (Pro User Only)")
+		self.AddStaticText(id=TXT_PASSWORD, flags=c4d.BFH_LEFT,
+						   initw=0, inith=0, name="Password (optional):    ")
+		self.AddEditText(id=EDITXT_PASSWORD, flags=c4d.BFH_LEFT,
+						 initw=200, inith=0, editflags=c4d.EDITTEXT_PASSWORD)
+		self.Enable(TXT_PASSWORD, False)
+		self.Enable(EDITXT_PASSWORD, False)
 		self.LayoutChanged(GROUP_FIVE)
 
 	def draw_upload_button(self):
@@ -247,6 +268,28 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 		self.AddButton(id=BTN_PUBLISH, flags=c4d.BFH_CENTER | c4d.BFV_CENTER, initw=200, inith=38, name="Upload")
 		self.Enable(BTN_PUBLISH, self.skfb_api.is_user_logged())
 		self.LayoutChanged(GROUP_SIX)
+
+	def Timer(self, msg):
+		if self.redraw_login:
+			self.draw_login_ui()
+			self.redraw_login = False
+		
+		if self.org_changed:
+			if self.skfb_api.use_org_profile:
+				self.Enable(GROUP_PROJECT, True)
+				self.Enable(TXT_PROJECT, True)
+				self.Enable(CBOX_PROJECT, True)
+				self.FreeChildren(CBOX_PROJECT)
+				for index, project in enumerate(self.skfb_api.active_org["projects"]):
+					self.AddChild(id=CBOX_PROJECT, subid=CBOX_PROJECT_ELT + index, child=project["name"])
+				self.SetInt32(CBOX_PROJECT, CBOX_PROJECT_ELT)
+				
+			else:
+				self.Enable(GROUP_PROJECT, False)
+				self.Enable(TXT_PROJECT, False)
+				self.Enable(CBOX_PROJECT, False)
+
+			self.org_changed = False
 
 	def CreateLayout(self):
 		
@@ -273,7 +316,7 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 		# Private options
 		self.GroupBegin(id=GROUP_FIVE,
 						flags=c4d.BFH_SCALEFIT | c4d.BFV_BOTTOM,
-						cols=3,
+						cols=1,
 						rows=1)
 		self.GroupSpace(4, 4)
 		self.GroupBorderSpace(6, 6, 6, 2)
@@ -289,8 +332,6 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 		self.GroupBorderSpace(6, 2, 6, 6)
 		self.draw_upload_button()
 		self.GroupEnd()
-
-		#self.GroupEnd()
 
 		self.draw_footer()
 
@@ -332,9 +373,11 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 		if id == CHK_PRIVATE:
 			if self.GetBool(CHK_PRIVATE):
 				self.Enable(EDITXT_PASSWORD, True)
+				self.Enable(TXT_PASSWORD, True)
 			else:
 				self.draw_private_options()
 				self.Enable(EDITXT_PASSWORD, False)
+				self.Enable(TXT_PASSWORD, False)
 
 		if id == BTN_PUBLISH:
 			c4d.StatusSetBar(50)
@@ -397,6 +440,9 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 				data['private'] = private
 			if private and len(password) != 0:
 				data['password'] = password
+			if self.skfb_api.use_org_profile:
+				project_index = self.GetInt32(CBOX_PROJECT) - CBOX_PROJECT_ELT
+				data["orgProject"] = self.skfb_api.active_org["projects"][project_index]["uid"]
 
 			# Start Multithread operations		
 			self.publish = PublishModelThread(self.skfb_api, data, title, activeDoc, activeDocPath, enable_animation)
