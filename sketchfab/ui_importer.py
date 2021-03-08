@@ -109,6 +109,9 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		self.userarea_paths_header.set_img(os.path.join(Config.PLUGIN_DIRECTORY, 'res', 'Sketchfab_Logo_importer.png'))
 		return True
 
+	def refresh_results(self):
+		self.redraw_results = True
+
 	def refresh(self):
 		self.redraw_login   = True
 		self.redraw_results = True
@@ -122,10 +125,29 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 	def Timer(self, msg):
 		if self.redraw_results:
 			self.resultGroupWillRedraw()
-
 		if self.redraw_login:
 			self.draw_login_ui()
 			self.redraw_login = False
+		if self.org_changed:
+			self.refresh_filters_ui()
+			self.SetInt32(CBOX_SEARCH_DOMAIN, CBOX_SEARCH_DOMAIN_ELT)
+			if self.skfb_api.use_org_profile:
+				self.Enable(CBOX_CATEGORY, False)
+				self.Enable(CHK_IS_PBR, False)
+				self.Enable(CHK_IS_STAFFPICK, False)
+				self.Enable(CHK_IS_ANIMATED, False)
+				self.Enable(CBOX_FACE_COUNT, True)
+				self.Enable(CBOX_SORT_BY, True)
+			else:
+				self.Enable(CBOX_CATEGORY, True)
+				self.Enable(CHK_IS_PBR, True)
+				self.Enable(CHK_IS_STAFFPICK, True)
+				self.Enable(CHK_IS_ANIMATED, True)
+				self.Enable(CBOX_FACE_COUNT, True)
+				self.Enable(CBOX_SORT_BY, True)
+			self.refresh_search_ui()
+			self.trigger_search()
+			self.org_changed = False
 
 	def CreateLayout(self):
 
@@ -134,7 +156,7 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		
 		# Main UI
 		super(SkfbPluginDialog, self).CreateLayout()
-		self.skfb_api.request_callback = self.refresh
+		self.skfb_api.request_callback = self.refresh_results
 		self.skfb_api.login_callback   = self.refresh_login_ui
 
 		# Toggle CHK_My8models
@@ -190,12 +212,21 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 
 		return True
 
+	def get_available_search_domains(self):
+		if self.skfb_api.use_org_profile:
+			domains = [["all org", "All organization", "All organization"]]
+			for project in self.skfb_api.active_org["projects"]:
+				domains.append([project["uid"], project["name"], project["name"]])
+		else:
+			domains = Config.SKETCHFAB_SEARCH_DOMAINS
+		return domains
+
 	def draw_search_ui(self):
 		self.LayoutFlushGroup(GROUP_QUERY)
 
 		self.AddStaticText(id=LB_SEARCH_QUERY, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=90, inith=TEXT_WIDGET_HEIGHT, name=" Search: ")
 		self.AddComboBox(id=CBOX_SEARCH_DOMAIN, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=150, inith=TEXT_WIDGET_HEIGHT)
-		for index, category in enumerate(Config.SKETCHFAB_SEARCH_DOMAINS):
+		for index, category in enumerate(self.get_available_search_domains()):
 			self.AddChild(id=CBOX_SEARCH_DOMAIN, subid=CBOX_SEARCH_DOMAIN_ELT + index, child=category[2])
 		self.SetInt32(CBOX_SEARCH_DOMAIN, CBOX_SEARCH_DOMAIN_ELT)
 		self.AddEditText(id=EDITXT_SEARCH_QUERY, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=500, inith=TEXT_WIDGET_HEIGHT)
@@ -214,27 +245,24 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		self.AddComboBox(id=CBOX_CATEGORY, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=250, inith=TEXT_WIDGET_HEIGHT)
 		for index, category in enumerate(Config.SKETCHFAB_CATEGORIES):
 			self.AddChild(id=CBOX_CATEGORY, subid=CBOX_CATEGORY_ELT + index, child=category[2])
-		self.SetInt32(CBOX_CATEGORY, CBOX_CATEGORY_ELT)
+		
 
 		self.AddCheckbox(id=CHK_IS_PBR, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=80, inith=TEXT_WIDGET_HEIGHT, name='PBR')
-		self.SetBool(CHK_IS_PBR, False)
 		self.AddCheckbox(id=CHK_IS_STAFFPICK, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=120, inith=TEXT_WIDGET_HEIGHT, name='Staffpick')
-		self.SetBool(CHK_IS_STAFFPICK, False)
 		self.AddCheckbox(id=CHK_IS_ANIMATED, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=150, inith=TEXT_WIDGET_HEIGHT, name='Animated')
-		self.SetBool(CHK_IS_ANIMATED, False)
 
 		self.AddStaticText(id=LB_FACE_COUNT, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=90, inith=TEXT_WIDGET_HEIGHT, name="Face count: ")
 		self.AddComboBox(id=CBOX_FACE_COUNT, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=120, inith=TEXT_WIDGET_HEIGHT)
 		for index, face_count in enumerate(Config.SKETCHFAB_FACECOUNT):
 			self.AddChild(id=CBOX_FACE_COUNT, subid=CBOX_FACE_COUNT_ELT + index, child=face_count[1])
-		self.SetInt32(CBOX_FACE_COUNT, CBOX_FACE_COUNT_ELT)
 
 		self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
 		self.AddStaticText(id=LB_FACE_COUNT, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=60, inith=TEXT_WIDGET_HEIGHT, name="Sort by: ")
 		self.AddComboBox(id=CBOX_SORT_BY, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=90, inith=TEXT_WIDGET_HEIGHT)
 		for index, sort_by in enumerate(Config.SKETCHFAB_SORT_BY):
 			self.AddChild(id=CBOX_SORT_BY, subid=CBOX_SORT_BY_ELT + index, child=sort_by[1])
-		self.SetInt32(CBOX_SORT_BY, CBOX_SORT_BY_ELT + 3)
+
+		self.reset_filters()
 
 		self.LayoutChanged(GROUP_FILTERS)
 
@@ -256,20 +284,19 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		"""
 
 		if not self.result_valid():
-			return 0
-
-		search_domain = self.GetInt32(CBOX_SEARCH_DOMAIN) - CBOX_SEARCH_DOMAIN_ELT
-		if search_domain == 1 and not self.skfb_api.is_user_pro:
-			return 2
-
+			return 1
 		n_results = len(self.skfb_api.search_results['current'])
-		if n_results == 0:
-			if search_domain in [0,1]:
-				return 1
-			else:
-				return 3
+
+		if self.skfb_api.use_org_profile:
+			return 0 if n_results else 1
 		else:
-			return 0
+			search_domain = self.GetInt32(CBOX_SEARCH_DOMAIN) - CBOX_SEARCH_DOMAIN_ELT
+			if search_domain == 1 and not self.skfb_api.is_user_pro:
+				return 2
+			elif n_results == 0:
+				return 1 if search_domain in [0,1] else 3
+			else:
+				return 0
 
 	def resultGroupWillRedraw(self):
 		self.draw_prev_next()
@@ -333,8 +360,18 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		self.skfb_api.search(Config.DEFAULT_SEARCH)
 
 	def trigger_search(self):
-		search_domain_str = Config.SKETCHFAB_SEARCH_DOMAINS[self.GetInt32(CBOX_SEARCH_DOMAIN) - CBOX_SEARCH_DOMAIN_ELT][0]
-		final_query = Config.SKETCHFAB_API + '/v3' + search_domain_str
+		if self.skfb_api.use_org_profile:
+			# If we use an org profile, search either amongst the whole org or the selected projects
+			cbox_index = self.GetInt32(CBOX_SEARCH_DOMAIN) - CBOX_SEARCH_DOMAIN_ELT
+			org_search_endpoint = Config.SKETCHFAB_ORGS + "/%s/models?isArchivesReady=true" % self.skfb_api.active_org["uid"]
+			if cbox_index == 0:
+				final_query = org_search_endpoint
+			else:
+				final_query = org_search_endpoint + "&projects=%s" % self.skfb_api.active_org["projects"][cbox_index - 1]["uid"]
+		else:
+			# If we don't use an org profile, use normal search endpoints
+			search_domain_str = Config.SKETCHFAB_SEARCH_DOMAINS[self.GetInt32(CBOX_SEARCH_DOMAIN) - CBOX_SEARCH_DOMAIN_ELT][0]
+			final_query = Config.SKETCHFAB_API + '/v3' + search_domain_str
 
 		if self.GetString(EDITXT_SEARCH_QUERY):
 			final_query = final_query + '&q={}'.format(self.GetString(EDITXT_SEARCH_QUERY))
@@ -373,13 +410,13 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 
 		self.skfb_api.search(final_query)
 
-	def reset_filters(self, is_own_model):
-		self.SetBool(CHK_IS_STAFFPICK, not is_own_model)
-		self.SetBool(CHK_IS_ANIMATED, False)
+	def reset_filters(self):
+		self.SetInt32(CBOX_CATEGORY, CBOX_CATEGORY_ELT + 0)
 		self.SetBool(CHK_IS_PBR, False)
-		self.SetInt32(CBOX_CATEGORY, CBOX_CATEGORY_ELT)
-		self.SetInt32(CBOX_FACE_COUNT, CBOX_FACE_COUNT_ELT)
-		self.SetInt32(CBOX_SORT_BY, CBOX_SORT_BY_ELT + 1)
+		self.SetBool(CHK_IS_STAFFPICK, False)
+		self.SetBool(CHK_IS_ANIMATED, False)
+		self.SetInt32(CBOX_FACE_COUNT, CBOX_FACE_COUNT_ELT + 0)
+		self.SetInt32(CBOX_SORT_BY, CBOX_SORT_BY_ELT + 0)
 
 	def Command(self, id, msg):
 		trigger_search = False
@@ -410,7 +447,10 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 			trigger_search = True
 
 		if id == CBOX_SEARCH_DOMAIN:
-			self.Enable(GROUP_FILTERS, (self.GetInt32(CBOX_SEARCH_DOMAIN) - CBOX_SEARCH_DOMAIN_ELT) != 2)
+			if self.skfb_api.use_org_profile:
+				self.Enable(GROUP_FILTERS, False)
+			else:	
+				self.Enable(GROUP_FILTERS, (self.GetInt32(CBOX_SEARCH_DOMAIN) - CBOX_SEARCH_DOMAIN_ELT) != 2)
 			self.refresh_filters_ui()
 
 		if trigger_search:

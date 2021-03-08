@@ -91,6 +91,9 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 	def initialize(self):
 		self.is_initialized = True
 		self.skfb_api.connect_to_sketchfab()
+	
+	def refresh(self):
+		pass
 
 	def draw_header(self):
 		self.LayoutFlushGroup(GROUP_HEADER)
@@ -102,7 +105,7 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 		self.LayoutChanged(GROUP_HEADER)
 
 	def draw_login_ui(self):
-		
+
 		self.LayoutFlushGroup(GROUP_LOGIN)
 
 		if not self.is_initialized:
