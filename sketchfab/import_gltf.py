@@ -1022,6 +1022,7 @@ class ImportGLTF(plugins.ObjectData):
             return
 
         mat[c4d.MATERIAL_USE_NORMAL] = 1
+        mat[c4d.MATERIAL_NORMAL_REVERSEY] = True
         normaltexshader = self.gltf_textures[material.normal_texture.index].to_c4d_shader()
         mat.SetParameter(c4d.MATERIAL_NORMAL_SHADER, normaltexshader, c4d.DESCFLAGS_SET_NONE)
         mat.InsertShader(normaltexshader)
