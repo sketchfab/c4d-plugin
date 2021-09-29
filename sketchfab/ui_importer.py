@@ -175,11 +175,11 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		self.GroupEnd()
 
 		self.GroupBegin(id=GROUP_FILTERS,
-						flags=c4d.BFH_SCALEFIT | c4d.BFV_FIT,
+						flags=c4d.BFH_SCALEFIT ,
 						cols=9,
 						rows=1,
 						title="Search",
-						groupflags=c4d.BORDER_NONE | c4d.BFV_BORDERGROUP_FOLD_OPEN)
+						groupflags=c4d.BORDER_NONE)
 
 		self.GroupBorderSpace(6, 6, 6, 6)
 
@@ -187,7 +187,7 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 
 		self.GroupEnd()
 
-		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+		self.AddSeparatorH(initw=0, flags=c4d.BFH_FIT)
 
 		self.GroupBegin(GROUP_PREVNEXT, c4d.BFH_FIT | c4d.BFV_CENTER, 3, 1, "Prevnext")
 		self.GroupBorderSpace(4, 2, 4, 2)
@@ -256,7 +256,7 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		for index, face_count in enumerate(Config.SKETCHFAB_FACECOUNT):
 			self.AddChild(id=CBOX_FACE_COUNT, subid=CBOX_FACE_COUNT_ELT + index, child=face_count[1])
 
-		self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
+		self.AddSeparatorV(inith=0, flags=c4d.BFH_SCALE)
 		self.AddStaticText(id=LB_FACE_COUNT, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=60, inith=TEXT_WIDGET_HEIGHT, name="Sort by: ")
 		self.AddComboBox(id=CBOX_SORT_BY, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=90, inith=TEXT_WIDGET_HEIGHT)
 		for index, sort_by in enumerate(Config.SKETCHFAB_SORT_BY):
@@ -349,7 +349,7 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 
 		if self.result_valid() and len(self.skfb_api.search_results['current']) > 0:
 			self.AddButton(id=BTN_PREV_PAGE, flags=c4d.BFH_LEFT | c4d.BFV_CENTER, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Previous")
-			self.AddSeparatorV(0.0, flags=c4d.BFH_SCALE)
+			self.AddSeparatorV(inith=0.0, flags=c4d.BFH_SCALE)
 			self.AddButton(id=BTN_NEXT_PAGE, flags=c4d.BFH_RIGHT | c4d.BFV_CENTER, initw=75, inith=TEXT_WIDGET_HEIGHT, name="Next")
 			self.Enable(BTN_PREV_PAGE, self.skfb_api.has_prev())
 			self.Enable(BTN_NEXT_PAGE, self.skfb_api.has_next())
@@ -540,7 +540,7 @@ class SkfbModelDialog(gui.GeDialog):
 						   initw=500,
 						   name=u'Title:         {}'.format(self.skfb_model.title))
 
-		self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
+		self.AddSeparatorV(inith=0, flags=c4d.BFH_SCALE)
 		self.AddStaticText(id=LB_MODEL_VERTEX_COUNT,
 						   flags=c4d.BFH_RIGHT,
 						   initw=500,
@@ -550,7 +550,7 @@ class SkfbModelDialog(gui.GeDialog):
 						   initw=500,
 						   name=u'Author:    {}'.format(self.skfb_model.author))
 
-		self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
+		self.AddSeparatorV(inith=0, flags=c4d.BFH_SCALE)
 		self.AddStaticText(id=LB_MODEL_FACE_COUNT, flags=c4d.BFH_RIGHT,
 						   initw=500,
 						   name=u'          Face Count:       {}'.format(Utils.humanify_number(self.skfb_model.face_count)))
@@ -558,7 +558,7 @@ class SkfbModelDialog(gui.GeDialog):
 		self.AddStaticText(id=LB_MODEL_LICENCE, flags=c4d.BFH_LEFT,
 						   initw=500,
 						   name=u'License:    {}'.format(self.skfb_model.license))
-		self.AddSeparatorV(50.0, flags=c4d.BFH_SCALE)
+		self.AddSeparatorV(inith=0, flags=c4d.BFH_SCALE)
 		self.AddStaticText(id=LB_MODEL_ANIMATION_COUNT, flags=c4d.BFH_RIGHT,
 						   initw=500,
 						   name=u'          Animated:          {}'.format(self.skfb_model.animated))
