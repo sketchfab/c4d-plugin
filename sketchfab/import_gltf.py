@@ -98,7 +98,7 @@ class ImportGLTF(plugins.ObjectData):
             gui.MessageDialog(text=msg, type=c4d.GEMB_OK)
             self.is_done = True
             self.progress_callback('Done', 1, 1)
-            return 
+            return
 
         # Import
         self.import_gltf_textures(gltf)
@@ -165,7 +165,7 @@ class ImportGLTF(plugins.ObjectData):
         return v3
 
     def quat_to_eulerxyz(self, quat):
-        
+
         x, y, z, w = quat
 
         X   = math.atan2(2*(w*x+y*z), 1-2*(x*x+y*y))
@@ -221,7 +221,7 @@ class ImportGLTF(plugins.ObjectData):
 
             gltf_node  = gltf.data.nodes[i]
             c4d_object, name = None, None
-            
+
             if i not in joints:
                 if gltf_node.mesh is not None:
                     c4d_object = self.convert_mesh(gltf, gltf_node.mesh, materials)
@@ -237,7 +237,7 @@ class ImportGLTF(plugins.ObjectData):
             nodes[i] = c4d_object
             c4d_object.SetName(name)
 
-            # Transforms    
+            # Transforms
             c4d_object.SetRotationOrder(5)  # Local XYZ
             c4d_object.SetQuaternionRotationMode(1, 0)
             ignoreTransforms = gltf_node.mesh is not None and gltf_node.skin is not None
@@ -291,7 +291,7 @@ class ImportGLTF(plugins.ObjectData):
                 if gltf_node.translation:
                     tr = gltf_node.translation
                     obj.SetRelPos(c4d.Vector(tr[0], tr[1], -tr[2]))
-           
+
     def convert_primitive(self, prim, gltf, materials):
         # Helper functions
         def float2bytes(f):
@@ -437,7 +437,7 @@ class ImportGLTF(plugins.ObjectData):
             parse_texcoords(texcoord_index, c4d_mesh)
 
         if prim.material is not None:
-        
+
             mat = materials[prim.material]
 
             # Only parse COLORS_0
@@ -478,7 +478,7 @@ class ImportGLTF(plugins.ObjectData):
         # Add GlTF root objects to document
         for node in gltf.data.scenes[0].nodes:
             c4d.documents.GetActiveDocument().InsertObject(nodes[node])
-        
+
         # Do the parenting
         for n in nodes:
             if nodes[n] is not None:
@@ -520,7 +520,7 @@ class ImportGLTF(plugins.ObjectData):
         for i in skins:
 
             skin    = skins[i]
-            
+
             for iNode, iMesh in zip(skin.node_idx, skin.mesh_idx):
 
                 c4d_obj   = nodes[iNode]
@@ -535,12 +535,12 @@ class ImportGLTF(plugins.ObjectData):
 
                     # Create the C4D tag
                     tag = CAWeightTag()
-                    c4d_obj.InsertTag(tag)                    
+                    c4d_obj.InsertTag(tag)
 
                     # Accessor data
                     weights = BinaryData.get_data_from_accessor(gltf, prim.attributes["WEIGHTS_0"]) if "WEIGHTS_0" in prim.attributes else []
                     joints  = BinaryData.get_data_from_accessor(gltf, prim.attributes["JOINTS_0"])  if "JOINTS_0"  in prim.attributes else []
-                    
+
                     # Unique list of joints used for the skinning
                     local_joints = list(set([j for sub in joints for j in sub]))
 
@@ -554,7 +554,7 @@ class ImportGLTF(plugins.ObjectData):
                         ind = skin.joints[idx]
                         joint = nodes[ind]
                         gltf_to_c4d[ind] = tag.AddJoint(joint)
-            
+
                         c4d_ibms.append(ibm)
                         c4d_joints.append(joint)
 
@@ -564,8 +564,8 @@ class ImportGLTF(plugins.ObjectData):
                             weight  = weights[vert_idx][influence_idx]
                             if weight > 0:
                                 tag.SetWeight(
-                                    gltf_to_c4d[ skin.joints[joints[vert_idx][influence_idx] ]], 
-                                    vert_idx, 
+                                    gltf_to_c4d[ skin.joints[joints[vert_idx][influence_idx] ]],
+                                    vert_idx,
                                     weight
                                 )
 
@@ -574,7 +574,7 @@ class ImportGLTF(plugins.ObjectData):
 
                         if joint.GetName() not in initial_transforms:
                             initial_transforms[joint.GetName()] = joint.GetMl()
-                        
+
                         # Read the IBM
                         if M is not None:
                             c4d_mat = self.gltf_matrix_to_c4d(M)
@@ -584,7 +584,7 @@ class ImportGLTF(plugins.ObjectData):
                     doc = c4d.documents.GetActiveDocument()
                     doc.SetActiveTag(tag, mode=c4d.SELECTION_NEW)
                     c4d.CallButton(tag, c4d.ID_CA_WEIGHT_TAG_SET)
-                   
+
             # Restore the inital position
             for jt in skin.joints:
                 joint = nodes[jt]
@@ -670,12 +670,12 @@ class ImportGLTF(plugins.ObjectData):
             ranges[i]["start"] += animationStart
             ranges[i]["end"]   += animationStart
             animationStart     += margin + ranges[i]["end"] - ranges[i]["start"]
-            
+
         # Remember the static positions of the nodes concerned by the keyframed channels
         for ID in CHANNELS:
             node_idx   = CHANNELS[ID]["node"]
             path       = CHANNELS[ID]["path"]
-            
+
             c4d_object = nodes[node_idx]
             CHANNELS[ID]["rest_data"] = None
             if path == "translation":
@@ -692,7 +692,7 @@ class ImportGLTF(plugins.ObjectData):
                 if not len(c["time"][i]): # Empty channel -> we fix it to the rest position
                     pass
                     c["time"][i] = [ranges[i]["start"] + eps, ranges[i]["end"] - eps]
-                    c["data"][i] = [c["rest_data"], c["rest_data"]]                    
+                    c["data"][i] = [c["rest_data"], c["rest_data"]]
                     c["fixed"][i] = 1
 
                 else:
@@ -741,7 +741,7 @@ class ImportGLTF(plugins.ObjectData):
                 for axis in [c4d.VECTOR_X, c4d.VECTOR_Y, c4d.VECTOR_Z]:
 
                     descid = c4d.DescID(
-                        c4d.DescLevel(trackType, c4d.DTYPE_VECTOR,0), 
+                        c4d.DescLevel(trackType, c4d.DTYPE_VECTOR,0),
                         c4d.DescLevel(axis, c4d.DTYPE_REAL,0)
                     )
                     descid = [trackType, axis]
@@ -759,7 +759,7 @@ class ImportGLTF(plugins.ObjectData):
 
                 # Create the keyframes
                 for i,o in zip(in_data, out_data):
-                    
+
                     data = None
                     if channel["fixed"][ani]:
                         # Animation data for "fixed" keyframes
@@ -786,7 +786,7 @@ class ImportGLTF(plugins.ObjectData):
                         curves[j].InsertKey(key)
                         key.SetInterpolation(curves[j], c4d.CINTERPOLATION_LINEAR)
                         key.SetQuatInterpolation(curves[j], c4d.ROTATIONINTERPOLATION_QUATERNION_SLERP)
-            
+
 
                 # Update
                 c4d_object.Message(c4d.MSG_UPDATE)
@@ -841,7 +841,7 @@ class ImportGLTF(plugins.ObjectData):
             mat.SetParameter(c4d.MATERIAL_COLOR_SHADER, vtxcolorshader, c4d.DESCFLAGS_SET_NONE)
 
         # check if vertex color already enabled:
-        if not colortag or mat.GetReflectionLayerIndex(0).GetName() == 'Vertex Colors':
+        if not colortag or (mat.GetReflectionLayerIndex(0) and (mat.GetReflectionLayerIndex(0).GetName() == 'Vertex Colors')):
             return
 
         vtx_color_diffuse = mat.AddReflectionLayer()
