@@ -841,7 +841,7 @@ class ImportGLTF(plugins.ObjectData):
             mat.SetParameter(c4d.MATERIAL_COLOR_SHADER, vtxcolorshader, c4d.DESCFLAGS_SET_NONE)
 
         # check if vertex color already enabled:
-        if not colortag or mat.GetReflectionLayerIndex(0).GetName() == 'Vertex Colors':
+        if not colortag or (mat.GetReflectionLayerIndex(0) and (mat.GetReflectionLayerIndex(0).GetName() == 'Vertex Colors')):
             return
 
         vtx_color_diffuse = mat.AddReflectionLayer()
