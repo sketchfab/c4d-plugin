@@ -165,7 +165,7 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 
 		self.GroupEnd()
 
-		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+		self.AddSeparatorH(initw=0, flags=c4d.BFH_FIT)
 
 		self.GroupBegin(GROUP_PREVNEXT, c4d.BFH_FIT | c4d.BFV_CENTER, 3, 1, "Prevnext")
 		self.GroupBorderSpace(4, 2, 4, 2)

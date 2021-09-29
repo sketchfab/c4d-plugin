@@ -164,7 +164,7 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 		self.GroupEnd()
 
 	def draw_footer(self):
-		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+		self.AddSeparatorH(initw=0, flags=c4d.BFH_FIT)
 		self.GroupBegin(GROUP_FOOTER, c4d.BFH_FIT | c4d.BFV_CENTER, 3, 1, "Footer")
 
 		self.LayoutFlushGroup(GROUP_FOOTER)
@@ -216,7 +216,7 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 		self.GroupBegin(GROUP_HEADER, c4d.BFH_LEFT | c4d.BFV_TOP, 1, 1, "Header")
 		self.draw_header()
 		self.GroupEnd()
-		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+		self.AddSeparatorH(initw=0, flags=c4d.BFH_FIT)
 
 		# Login
 		self.GroupBegin(id=GROUP_LOGIN,
@@ -228,7 +228,7 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 		self.draw_login_ui()
 		self.GroupEnd()
 
-		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+		self.AddSeparatorH(initw=0, flags=c4d.BFH_FIT)
 
 	def AskClose(self):
 		self.is_initialized = False

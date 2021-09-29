@@ -268,7 +268,7 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 		self.draw_model_properties()
 		self.GroupEnd()
 
-		self.AddSeparatorH(inith=0, flags=c4d.BFH_FIT)
+		self.AddSeparatorH(initw=0, flags=c4d.BFH_FIT)
 
 		# Private options
 		self.GroupBegin(id=GROUP_FIVE,
