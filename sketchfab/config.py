@@ -107,5 +107,3 @@ class Config:
                          ('LIKES', "Likes", ""),
                          ('VIEWS', "Views", ""),
                          ('RECENT', "Recent", ""))
-
-

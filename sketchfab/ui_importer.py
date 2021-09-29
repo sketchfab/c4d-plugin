@@ -59,7 +59,7 @@ BTN_PREV_PAGE = 2104
 LB_SEARCH_QUERY = 2200
 LB_FACE_COUNT = 2202
 LB_SORT_BY = 2203
-LB_RESULT_NAME_START = 2209 
+LB_RESULT_NAME_START = 2209
 # Model Window
 LB_MODEL_NAME = 2210
 LB_MODEL_AUTHOR = 2211
@@ -131,7 +131,7 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 
 		# Title
 		self.SetTitle(__importer_title__)
-		
+
 		# Main UI
 		super(SkfbPluginDialog, self).CreateLayout()
 		self.skfb_api.request_callback = self.refresh
@@ -172,7 +172,7 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 		self.draw_prev_next()
 		self.GroupEnd()
 
-		
+
 		warning = self.needs_warning()
 		if self.is_initialized and warning:
 			self.draw_warning_ui(warning)
@@ -183,7 +183,7 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 			self.draw_results_ui()
 			self.GroupEnd()
 			self.GroupEnd()
-			
+
 		self.draw_footer()
 
 		self.trigger_default_search()
@@ -399,13 +399,13 @@ class SkfbPluginDialog(ui_login.SketchfabDialogWithLogin):
 					trigger_search = True
 
 		if id in [
-			BTN_SEARCH, 
+			BTN_SEARCH,
 			CBOX_SEARCH_DOMAIN,
-			CBOX_CATEGORY, 
+			CBOX_CATEGORY,
 			CBOX_SORT_BY,
 			CBOX_FACE_COUNT,
-			CHK_IS_PBR, 
-			CHK_IS_ANIMATED, 
+			CHK_IS_PBR,
+			CHK_IS_ANIMATED,
 			CHK_IS_STAFFPICK]:
 			trigger_search = True
 

@@ -114,7 +114,7 @@ class PublishModelThread(c4d.threading.C4DThread):
 		# Create a temporary directory to export everything in
 		exportDirectory = tempfile.mkdtemp()
 		zipName         = os.path.join(self.activeDocPath, self.title)
-		
+
 		# Save the current FBX export options
 		options = self.get_fbxexport_options()
 		export_options[c4d.FBXEXPORT_TRACKS] = self.enable_animation
@@ -155,7 +155,7 @@ class PublishModelThread(c4d.threading.C4DThread):
 		except requests.exceptions.RequestException as e:
 			g_uploaded = False
 			g_error = e
-			return 
+			return
 
 		result = r.json()
 
@@ -173,7 +173,7 @@ class PublishModelThread(c4d.threading.C4DThread):
 		# Clean up
 		self.cleanup_files([zipName + ".zip", exportDirectory])
 		c4d.SpecialEventAdd(__exporter_id__)
-			
+
 		return
 
 	def get_fbxexport_options(self):
@@ -197,7 +197,7 @@ class PublishModelThread(c4d.threading.C4DThread):
 						os.remove(f)
 				except Exception:
 					print("Unable to remove file {0}".format(f))
-		
+
 
 class MainDialog(ui_login.SketchfabDialogWithLogin):
 	"""Main Dialog Class"""
@@ -249,7 +249,7 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 		self.LayoutChanged(GROUP_SIX)
 
 	def CreateLayout(self):
-		
+
 		# Title
 		self.SetTitle(__exporter_title__)
 
@@ -398,7 +398,7 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 			if private and len(password) != 0:
 				data['password'] = password
 
-			# Start Multithread operations		
+			# Start Multithread operations
 			self.publish = PublishModelThread(self.skfb_api, data, title, activeDoc, activeDocPath, enable_animation)
 			self.publish.Start()
 			self.publish.Wait(True)

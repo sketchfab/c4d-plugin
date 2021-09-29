@@ -61,14 +61,14 @@ class UserAreaPathsHeader(c4d.gui.GeUserArea):
 		logo, _  = self.bmp.InitWith(self.img_path)
 		if logo == c4d.IMAGERESULT_OK:
 			self.DrawBitmap(self.bmp, 0, 0, 448, 75,
-							0, 0, self.bmp.GetBw(), self.bmp.GetBh(), 
+							0, 0, self.bmp.GetBw(), self.bmp.GetBh(),
 							c4d.BMP_NORMALSCALED | c4d.BMP_ALLOWALPHA)
 
 	def Redraw(self):
 		logo, _  = self.bmp.InitWith(self.img_path)
 		if logo == c4d.IMAGERESULT_OK:
 			self.DrawBitmap(self.bmp, 0, 0, 448, 75,
-							0, 0, self.bmp.GetBw(), self.bmp.GetBh(), 
+							0, 0, self.bmp.GetBw(), self.bmp.GetBh(),
 							c4d.BMP_NORMALSCALED | c4d.BMP_ALLOWALPHA)
 
 class SketchfabDialogWithLogin(c4d.gui.GeDialog):
@@ -79,7 +79,7 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 	status_widget  = None
 	is_initialized = False
 	cta_link       = None
-	
+
 	def initialize(self):
 		self.is_initialized = True
 		self.skfb_api.connect_to_sketchfab()
@@ -94,7 +94,7 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 		self.LayoutChanged(GROUP_HEADER)
 
 	def draw_login_ui(self):
-		
+
 		self.LayoutFlushGroup(GROUP_LOGIN)
 
 		if not self.is_initialized:
@@ -112,7 +112,7 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 
 		# Little hack to get username set in UI
 		self.SetString(LB_CONNECT_STATUS, u"Connected as {}".format(self.skfb_api.display_name))
-		self.LayoutChanged(GROUP_LOGIN)	
+		self.LayoutChanged(GROUP_LOGIN)
 
 	def refresh_version_ui(self):
 		self.draw_version_ui()
@@ -198,7 +198,7 @@ class SketchfabDialogWithLogin(c4d.gui.GeDialog):
 	def CreateLayout(self):
 		# Initialization
 		self.setup_api()
-		
+
 		# Menu
 		self.MenuFlushAll()
 		self.MenuSubBegin("File")
