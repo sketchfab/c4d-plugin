@@ -613,4 +613,4 @@ class ThreadedSearch(C4DThread):
         self.skfb_api.search_results['current'][uid].preview_path = preview_path
         self.skfb_api.search_results['current'][uid].thumbnail_path = thumbnail_path
         if self.skfb_api.request_callback:
-        	self.skfb_api.request_callback()
+            self.skfb_api.request_callback()
