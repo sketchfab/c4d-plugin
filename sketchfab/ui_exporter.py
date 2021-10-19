@@ -251,9 +251,9 @@ class MainDialog(ui_login.SketchfabDialogWithLogin):
 	def draw_private_options(self):
 		self.LayoutFlushGroup(GROUP_FIVE)
 		self.AddCheckbox(id=CHK_PUBLISHDRAFT, flags=c4d.BFH_LEFT,
-						 initw=0, inith=0, name="Publish as a draft (not visible to public immediately)")
+						 initw=0, inith=0, name="Upload as a draft (not visible to public immediately)")
 		self.AddCheckbox(id=CHK_PRIVATE, flags=c4d.BFH_SCALEFIT | c4d.BFH_LEFT,
-						 initw=0, inith=0, name="Private Model (Pro User Only)")
+						 initw=0, inith=0, name="Private Model (Pro Only)")
 		self.AddStaticText(id=TXT_PASSWORD, flags=c4d.BFH_LEFT,
 						   initw=0, inith=0, name="Password (optional):    ")
 		self.AddEditText(id=EDITXT_PASSWORD, flags=c4d.BFH_LEFT,
