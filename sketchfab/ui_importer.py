@@ -537,30 +537,30 @@ class SkfbModelDialog(gui.GeDialog):
         self.LayoutFlushGroup(GROUP_MODEL_INFO)
 
         self.AddStaticText(id=LB_MODEL_NAME, flags=c4d.BFH_LEFT,
-                           initw=500,
+                           initw=400,
                            name=u'Title:         {}'.format(self.skfb_model.title))
 
         self.AddSeparatorV(inith=0, flags=c4d.BFH_SCALE)
         self.AddStaticText(id=LB_MODEL_VERTEX_COUNT,
                            flags=c4d.BFH_RIGHT,
-                           initw=500,
+                           initw=400,
                            name=u'          Vertex Count:    {}'.format(Utils.humanify_number(self.skfb_model.vertex_count)))
 
         self.AddStaticText(id=LB_MODEL_AUTHOR, flags=c4d.BFH_LEFT,
-                           initw=500,
+                           initw=400,
                            name=u'Author:    {}'.format(self.skfb_model.author))
 
         self.AddSeparatorV(inith=0, flags=c4d.BFH_SCALE)
         self.AddStaticText(id=LB_MODEL_FACE_COUNT, flags=c4d.BFH_RIGHT,
-                           initw=500,
+                           initw=400,
                            name=u'          Face Count:       {}'.format(Utils.humanify_number(self.skfb_model.face_count)))
 
         self.AddStaticText(id=LB_MODEL_LICENCE, flags=c4d.BFH_LEFT,
-                           initw=500,
+                           initw=400,
                            name=u'License:    {}'.format(self.skfb_model.license))
         self.AddSeparatorV(inith=0, flags=c4d.BFH_SCALE)
         self.AddStaticText(id=LB_MODEL_ANIMATION_COUNT, flags=c4d.BFH_RIGHT,
-                           initw=500,
+                           initw=400,
                            name=u'          Animated:          {}'.format(self.skfb_model.animated))
 
         self.LayoutChanged(GROUP_MODEL_INFO)
