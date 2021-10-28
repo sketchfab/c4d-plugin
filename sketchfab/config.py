@@ -19,7 +19,7 @@ from c4d import storage
 
 class Config:
 
-    PLUGIN_VERSION = "1.4.0"
+    PLUGIN_VERSION = "1.5.0"
     PLUGIN_TITLE   = "Sketchfab Plugin"
     PLUGIN_AUTHOR  = "Sketchfab"
     PLUGIN_TWITTER = "@sketchfab"
@@ -53,11 +53,13 @@ class Config:
     SKETCHFAB_API = 'https://api.sketchfab.com'
     SKETCHFAB_SEARCH = SKETCHFAB_API + '/v3/search?type=models&downloadable=true'
     SKETCHFAB_MODEL = SKETCHFAB_API + '/v3/models'
+    SKETCHFAB_ORGS = SKETCHFAB_API + '/v3/orgs'
     SKETCHFAB_OWN_MODELS_SEARCH = SKETCHFAB_API + '/v3/me/search?type=models&downloadable=true'
     SKETCHFAB_PLANS = 'https://sketchfab.com/plans?utm_source=c4d-plugin&utm_medium=plugin&utm_campaign=download-api-pro-cta'
     SKETCHFAB_STORE = 'https://sketchfab.com/store?utm_source=c4d-plugin&utm_medium=plugin&utm_campaign=store-cta'
     SKETCHFAB_REPORT_URL = 'https://help.sketchfab.com/hc/en-us/requests/new?type=exporters&subject=Cinema4D+Plugin'
     SKETCHFAB_SIGNUP = 'https://sketchfab.com/signup'
+    SKETCHFAB_TEAMS = 'https://sketchfab.com/features/teams'
 
     DEFAULT_FLAGS = '&staffpicked=true&sort_by=-publishedAt&min_face_count=1'
     DEFAULT_SEARCH = SKETCHFAB_SEARCH + \
@@ -107,5 +109,3 @@ class Config:
                          ('LIKES', "Likes", ""),
                          ('VIEWS', "Views", ""),
                          ('RECENT', "Recent", ""))
-
-

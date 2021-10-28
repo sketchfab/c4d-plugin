@@ -41,6 +41,10 @@ class SketchfabApi:
         self.search_results = {}
         self.threads = []
 
+        self.user_orgs = []
+        self.active_org = None
+        self.use_org_profile = False
+
         self.version_callback = None
         self.login_callback = None
         self.import_callback = None
@@ -66,12 +70,17 @@ class SketchfabApi:
         self.check_plugin_version()
         self.check_user_logged()
         self.request_user_info()
+        self.request_user_orgs()
 
     def check_plugin_version(self):
         requests.get(Config.SKETCHFAB_PLUGIN_VERSION, hooks={'response': self.parse_plugin_version})
 
     def request_user_info(self):
         requests.get(Config.SKETCHFAB_ME, headers=self.headers, hooks={'response': self.parse_user_info})
+
+    def request_user_orgs(self):
+        self.user_orgs = []
+        requests.get(Config.SKETCHFAB_ME + "/orgs", headers=self.headers, hooks={'response': self.parse_orgs_info})
 
     def get_sketchfab_model(self, uid):
         if 'current' in self.search_results and uid in self.search_results['current']:
@@ -87,6 +96,7 @@ class SketchfabApi:
 
             self.build_headers()
             self.request_user_info()
+            self.request_user_orgs()
 
         else:
             print('Cannot login.\n{}'.format(r.json()))
@@ -156,16 +166,83 @@ class SketchfabApi:
             self.access_token = ''
             self.headers = {}
 
+    def parse_orgs_info(self, r, *args, **kargs):
+        """
+        Get and store information about user's orgs, and its orgs projects
+        """
+        if r.status_code == 200:
+            orgs_data = r.json()
+
+            # Get a list of the user's orgs
+            for org in orgs_data["results"]:
+                self.user_orgs.append({
+                    "uid":         org["uid"],
+                    "displayName": org["displayName"],
+                    "url":         org["publicProfileUrl"],
+                    "projects":    [],
+                })
+            self.user_orgs.sort(key = lambda x : x["displayName"])
+
+            # Iterate on the orgs to get lists of their projects
+            for org in self.user_orgs:
+
+                # Create the callback inline to keep a reference to the org uid
+                def parse_projects_info(r, *args, **kargs):
+                    """
+                    Get and store information about an org projects
+                    """
+                    if r.status_code == 200:
+                        projects_data = r.json()
+                        projects = projects_data["results"]
+                        # Add the projects to the orgs dict object
+                        for proj in projects:
+                            org_uid = proj["org"]["uid"]
+                            org = next((x for x in self.user_orgs if x["uid"] == org_uid))
+                            org["projects"].append({
+                                "uid":         proj["uid"],
+                                "name":        proj["name"],
+                                "slug":        proj["slug"],
+                                "modelCount":  proj["modelCount"],
+                                "memberCount": proj["memberCount"],
+                            })
+                        org["projects"].sort(key = lambda x : x["name"])
+
+                        # Iterate on all projects (not just the 24 first)
+                        if projects_data["next"] is not None:
+                            requests.get(
+                                projects_data["next"],
+                                headers=self.headers,
+                                hooks={'response': parse_projects_info}
+                            )
+
+                    else:
+                        print('Can not get projects info')
+
+                requests.get("%s/%s/projects" % (Config.SKETCHFAB_ORGS, org["uid"]),
+                    headers=self.headers,
+                    hooks={'response': parse_projects_info})
+
+            # Set the first org as active
+            if len(self.user_orgs):
+                self.active_org = self.user_orgs[0]
+
+            # Iterate on all orgs (not just the 24 first)
+            if orgs_data["next"] is not None:
+                requests.get(orgs_data["next"], headers=self.headers, hooks={'response': self.parse_orgs_info})
+
     def request_thumbnail(self, thumbnails_json, thumbnail_cb):
         url = Utils.get_thumbnail_url(thumbnails_json)
         requests.get(url, stream=True, hooks={'response': thumbnail_cb})
 
     def request_model_info(self, uid):
-        url = Config.SKETCHFAB_MODEL + '/' + uid
+        if self.use_org_profile:
+            url = Config.SKETCHFAB_ORGS + '/' + self.active_org["uid"] + "/models/" + uid
+        else:
+            url = Config.SKETCHFAB_MODEL + '/' + uid
         requests.get(url, hooks={'response': self.handle_model_info})
 
     def handle_model_info(self, r, *args, **kwargs):
-        uid = Utils.get_uid_from_model_url(r.url)
+        uid = Utils.get_uid_from_model_url(r.url, self.use_org_profile)
 
         # Dirty fix to avoid processing obsolete result data
         if 'current' not in self.search_results or uid not in self.search_results['current']:
@@ -178,7 +255,7 @@ class SketchfabApi:
         else:  # Personal models have no license
             model.license = "Personal (you own this model)"
 
-        anim_count = int(json_data['animationCount'])
+        anim_count = int(json_data['animationCount']) if 'animationCount' in json_data else 0
         model.animated = 'Yes ({} animation(s))'.format(anim_count) if anim_count > 0 else 'No'
         self.search_results['current'][uid] = model
 
@@ -212,7 +289,7 @@ class SketchfabApi:
                 skfb_model.url_expires = None
                 skfb_model.time_url_requested = None
 
-        response = requests.get(Utils.build_download_url(uid), headers=self.headers)
+        response = requests.get(Utils.build_download_url(uid, self.use_org_profile, self.active_org), headers=self.headers)
 
         response_json = response.json()
         if response.status_code != 200 or 'gltf' not in response_json:
@@ -222,7 +299,7 @@ class SketchfabApi:
                 self.msgbox_callback('Unexpected error: {}'.format(response_json))
             return
 
-        uid = Utils.get_uid_from_model_url(response.url)
+        uid = Utils.get_uid_from_model_url(response.url, self.use_org_profile)
 
         gltf = response_json['gltf']
         skfb_model = self.get_sketchfab_model(uid)
@@ -344,16 +421,16 @@ class ThreadedModelDownload(C4DThread):
                 skfb_model.download_url = None
                 skfb_model.url_expires = None
                 skfb_model.time_url_requested = None
-                requests.get(Utils.build_download_url(uid), headers=self.skfb_api.headers, hooks={'response': self.handle_download})
+                requests.get(Utils.build_download_url(uid, self.use_org_profile, self.active_org), headers=self.skfb_api.headers, hooks={'response': self.handle_download})
         else:
-            requests.get(Utils.build_download_url(uid), headers=self.skfb_api.headers, hooks={'response': self.handle_download})
+            requests.get(Utils.build_download_url(uid, self.use_org_profile, self.active_org), headers=self.skfb_api.headers, hooks={'response': self.handle_download})
 
     def handle_download(self, r, *args, **kwargs):
         if r.status_code != 200 or 'gltf' not in r.json():
             self.msgbox_callback('Download not available for this model')
             return
 
-        uid = Utils.get_uid_from_model_url(r.url)
+        uid = Utils.get_uid_from_model_url(r.url, self.use_org_profile)
 
         gltf = r.json()['gltf']
         skfb_model = self.skfb_api.get_sketchfab_model(uid)
@@ -536,4 +613,4 @@ class ThreadedSearch(C4DThread):
         self.skfb_api.search_results['current'][uid].preview_path = preview_path
         self.skfb_api.search_results['current'][uid].thumbnail_path = thumbnail_path
         if self.skfb_api.request_callback:
-        	self.skfb_api.request_callback()
+            self.skfb_api.request_callback()

@@ -53,8 +53,11 @@ class Utils:
         return '{}{}'.format(readable, suffix)
 
     @staticmethod
-    def build_download_url(uid):
-        return '{}/{}/download'.format(Config.SKETCHFAB_MODEL, uid)
+    def build_download_url(uid, use_org_profile, active_org=None):
+        if use_org_profile:
+            return '{}/{}/models/{}/download'.format(Config.SKETCHFAB_ORGS, active_org["uid"], uid)
+        else:
+            return '{}/{}/download'.format(Config.SKETCHFAB_MODEL, uid)
 
     @staticmethod
     def thumbnail_file_exists(uid):
@@ -111,8 +114,8 @@ class Utils:
         return thumbnail_url.split('/')[4]
 
     @staticmethod
-    def get_uid_from_model_url(model_url):
-        return model_url.split('/')[5]
+    def get_uid_from_model_url(model_url, use_org_profile):
+        return model_url.split('/')[7] if use_org_profile else model_url.split('/')[5]
     @staticmethod
     def get_uid_from_download_url(model_url):
         return model_url.split('/')[6]
