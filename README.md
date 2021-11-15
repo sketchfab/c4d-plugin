@@ -18,7 +18,7 @@ First download the **sketchfab-x-y-z.zip** file attached to the [latest release]
 
 **Note**: Make sure to remove any previous installation of Sketchfab plugins. It is also recommended to rename the directory into "Sketchfab", as this will allow the plugin to be displayed under the name "Sketchfab" instead of "sketchfab-win-1.3.0" for instance.
 
-To install the plugin, you should copy the newly extracted directory into an adequate directory, before restarting Cinema4D (you will find more information about plugin installation on the [dedicated page of Maxon FAQ](https://support.maxon.net/kb/faq.php?id=52)).
+To install the plugin, you should copy the newly extracted directory into an adequate directory, before restarting Cinema4D (you will find more information about plugin installation on the [dedicated page of Maxon FAQ](https://support.maxon.net/hc/en-us/articles/1500006433061-Where-do-I-install-plugins-in-R20-and-higher-)).
 
 #### User Preferences directory
 
